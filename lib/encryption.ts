@@ -35,7 +35,7 @@ function base64ToBytes(b64: string): ArrayBuffer {
 export async function encrypt(
   plaintext: string,
 ): Promise<{ encryptedKey: string; iv: string }> {
-  const rawKey = process.env.ENCRYPTION_KEY ?? "0".repeat(64);
+  const rawKey = process.env.NEXT_PUBLIC_ENCRYPTION_KEY ?? "0".repeat(64);
   const key = await getKey(rawKey);
   const ivBytes = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();
@@ -54,7 +54,7 @@ export async function decrypt(
   encryptedKey: string,
   iv: string,
 ): Promise<string> {
-  const rawKey = process.env.ENCRYPTION_KEY ?? "0".repeat(64);
+  const rawKey = process.env.NEXT_PUBLIC_ENCRYPTION_KEY ?? "0".repeat(64);
   const key = await getKey(rawKey);
   const ciphertext = base64ToBytes(encryptedKey);
   const ivBuffer = base64ToBytes(iv);

@@ -1,0 +1,5 @@
+procs:
+  next:
+    cmd: ["bun", "dev:frontend"]
+  convex:
+    cmd: ["bun", "dev:convex"]

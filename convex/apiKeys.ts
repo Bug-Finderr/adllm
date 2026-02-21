@@ -67,6 +67,18 @@ export const remove = mutation({
   },
 });
 
+// Returns just the provider names the user has configured (no keys)
+export const getAvailableProviders = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const keys = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    return keys.map((k) => k.provider);
+  },
+});
+
 // Internal: get encrypted key for a provider (used by proxy via HTTP action)
 export const getEncryptedForProvider = query({
   args: {

@@ -10,15 +10,16 @@ import { ActivityIcon } from "lucide-react";
 import { useEffect } from "react";
 
 export default function DashboardPage() {
+  const viewer = useQuery(api.users.viewer);
   const settings = useQuery(api.settings.get);
   const getOrCreate = useMutation(api.settings.getOrCreate);
 
-  // Initialize settings on first visit
+  // Initialize settings only once we know the user is authenticated
   useEffect(() => {
-    if (settings === null) {
+    if (viewer && settings === null) {
       getOrCreate().catch(console.error);
     }
-  }, [settings, getOrCreate]);
+  }, [viewer, settings, getOrCreate]);
 
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">

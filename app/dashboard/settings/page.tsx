@@ -24,9 +24,51 @@ import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { toast } from "sonner";
 
+type Provider = "anthropic" | "openai" | "google";
+
+// Must mirror lib/routing.ts ROUTING_PREFERENCES
+const ROUTING_PREFERENCES: Record<
+  string,
+  Array<{ provider: Provider; model: string; display: string; cost: string }>
+> = {
+  simple: [
+    { provider: "google", model: "gemini-2.0-flash", display: "Gemini Flash", cost: "$0.075" },
+    { provider: "openai", model: "gpt-4o-mini", display: "GPT-4o Mini", cost: "$0.15" },
+    { provider: "anthropic", model: "claude-haiku-4-5", display: "Claude Haiku", cost: "$0.80" },
+  ],
+  medium: [
+    { provider: "openai", model: "gpt-4o-mini", display: "GPT-4o Mini", cost: "$0.15" },
+    { provider: "google", model: "gemini-2.0-flash", display: "Gemini Flash", cost: "$0.075" },
+    { provider: "anthropic", model: "claude-haiku-4-5", display: "Claude Haiku", cost: "$0.80" },
+  ],
+  complex: [
+    { provider: "anthropic", model: "claude-sonnet-4-5", display: "Claude Sonnet", cost: "$3.00" },
+    { provider: "openai", model: "gpt-4o", display: "GPT-4o", cost: "$2.50" },
+    { provider: "google", model: "gemini-2.0-flash", display: "Gemini Flash", cost: "$0.075" },
+  ],
+};
+
+function getActiveRouting(configuredProviders: string[]) {
+  return ["simple", "medium", "complex"].map((tier) => {
+    const prefs = ROUTING_PREFERENCES[tier];
+    const match = prefs.find((p) => configuredProviders.includes(p.provider));
+    return {
+      tier,
+      ...(match ?? prefs[0]),
+      available: !!match,
+    };
+  });
+}
+
 export default function SettingsPage() {
   const settings = useQuery(api.settings.get);
+  const apiKeys = useQuery(api.apiKeys.list);
   const update = useMutation(api.settings.update);
+
+  const configuredProviders = (apiKeys ?? []).map(
+    (k: { provider: string }) => k.provider,
+  );
+  const activeRouting = getActiveRouting(configuredProviders);
 
   async function toggle(
     key: "routingEnabled" | "cacheEnabled",
@@ -43,9 +85,7 @@ export default function SettingsPage() {
     toast.success("Context saved");
   }
 
-  async function setProvider(
-    v: "anthropic" | "openai" | "google",
-  ) {
+  async function setProvider(v: Provider) {
     await update({ preferredProvider: v });
     toast.success("Default provider updated");
   }
@@ -65,8 +105,8 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-base">Smart Routing</CardTitle>
           <CardDescription>
-            Automatically routes requests to the cheapest capable model based on
-            prompt complexity.
+            Routes requests to the cheapest capable model based on prompt
+            complexity. Only routes to providers you have configured.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -91,39 +131,59 @@ export default function SettingsPage() {
               <span>Model</span>
               <span>Cost / 1M tokens</span>
             </div>
-            {[
-              { c: "simple", m: "Gemini Flash", cost: "$0.075" },
-              { c: "medium", m: "GPT-4o Mini", cost: "$0.15" },
-              { c: "complex", m: "Claude Sonnet", cost: "$3.00" },
-            ].map((row) => (
+            {activeRouting.map((row) => (
               <div
-                key={row.c}
-                className="grid grid-cols-3 border-t px-3 py-2"
+                key={row.tier}
+                className={`grid grid-cols-3 border-t px-3 py-2 ${
+                  !row.available ? "opacity-40" : ""
+                }`}
               >
                 <span className="capitalize text-muted-foreground">
-                  {row.c}
+                  {row.tier}
                 </span>
-                <span>{row.m}</span>
+                <span>
+                  {row.display}
+                  {!row.available && (
+                    <span className="ml-1 text-red-400">(no key)</span>
+                  )}
+                </span>
                 <span className="font-mono">{row.cost}</span>
               </div>
             ))}
           </div>
 
+          {configuredProviders.length === 0 && (
+            <p className="text-xs text-amber-500">
+              Add at least one API key above for routing to work.
+            </p>
+          )}
+
           <div className="space-y-2">
             <Label>Fallback provider (when routing is off)</Label>
             <Select
               value={settings?.preferredProvider ?? "anthropic"}
-              onValueChange={(v) =>
-                setProvider(v as "anthropic" | "openai" | "google")
-              }
+              onValueChange={(v) => setProvider(v as Provider)}
             >
               <SelectTrigger className="w-48">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="anthropic">Anthropic</SelectItem>
-                <SelectItem value="openai">OpenAI</SelectItem>
-                <SelectItem value="google">Google (Gemini)</SelectItem>
+                {configuredProviders.includes("anthropic") && (
+                  <SelectItem value="anthropic">Anthropic</SelectItem>
+                )}
+                {configuredProviders.includes("openai") && (
+                  <SelectItem value="openai">OpenAI</SelectItem>
+                )}
+                {configuredProviders.includes("google") && (
+                  <SelectItem value="google">Google (Gemini)</SelectItem>
+                )}
+                {configuredProviders.length === 0 && (
+                  <>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="google">Google (Gemini)</SelectItem>
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>

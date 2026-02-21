@@ -81,6 +81,15 @@ export async function POST(
 
   const userId = settings.userId;
 
+  // 1b. Load which providers the user has API keys for
+  const availableProviders = await fetchQuery(api.apiKeys.getAvailableProviders, { userId });
+  if (availableProviders.length === 0) {
+    return new Response(
+      JSON.stringify({ error: "No API keys configured. Add at least one in the Relay dashboard." }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   // 2. Parse request
   let body: OpenAIRequest;
   try {
@@ -128,19 +137,22 @@ export async function POST(
   const geminiKey = process.env.GEMINI_API_KEY ?? "";
 
   if (knownModel) {
-    // Direct model passthrough
+    // Direct model passthrough — use whatever provider the model belongs to
     provider = knownModel.provider;
     actualModel = knownModel.model;
   } else if (settings.routingEnabled && geminiKey) {
-    // Smart routing via Gemini Flash classifier
+    // Smart routing — only routes to providers the user has keys for
     const userText = extractUserText(messages);
-    const decision = await classifyAndRoute(userText, geminiKey);
+    const decision = await classifyAndRoute(userText, geminiKey, availableProviders as ("anthropic" | "openai" | "google")[]);
     provider = decision.provider;
     actualModel = decision.model;
     complexity = decision.complexity;
   } else {
-    // Fallback to preferred provider
-    provider = settings.preferredProvider;
+    // Routing off — use preferred provider if available, else first available
+    const preferred = settings.preferredProvider;
+    provider = (availableProviders as ("anthropic" | "openai" | "google")[]).includes(preferred)
+      ? preferred
+      : availableProviders[0] as "anthropic" | "openai" | "google";
     actualModel =
       provider === "anthropic"
         ? "claude-sonnet-4-5"

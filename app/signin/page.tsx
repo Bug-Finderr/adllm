@@ -11,13 +11,14 @@ export default function SignInPage() {
   const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     const formData = new FormData(e.currentTarget);
     formData.set("flow", flow);
     try {
       await signIn("password", formData);
+      window.location.href = "/dashboard";
     } catch {
       toast.error(
         flow === "signIn"
