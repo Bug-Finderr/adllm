@@ -1,103 +1,20 @@
----
-description: Use Bun instead of Node.js, npm, pnpm, or vite.
-globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
-alwaysApply: false
----
+# CLAUDE.md
 
-Default to using Bun instead of Node.js.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Commands
 
-## APIs
-
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
-
-## Frontend
-
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
+```bash
+bun dev                    # Start both Next.js + Convex dev servers (via mprocs)
+bun run dev:frontend       # Next.js only (with --turbopack)
+bun run dev:convex         # Convex only (bunx convex dev)
+bun run build              # Next.js production build
+bun run lint               # ESLint
+bunx convex deploy         # Deploy Convex functions to production
+bunx convex run ads:seed   # Seed default ads into database
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
-
-
+Always use `bun` / `bunx` — never npm, npx, pnpm, or yarn.
 
 ## Critical Guidelines
 
@@ -106,6 +23,74 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 - **Web search first**: Always search for latest documentation and reliable context before implementing
 - **Stay focused**: Ignore issues not related to the current task
 - **Minimal code**: Prioritize best practices with minimal, clean code
+
+## Architecture
+
+### Core: The Proxy Route
+
+`app/api/[relayToken]/v1/chat/completions/route.ts` — Edge Runtime, OpenAI-compatible endpoint.
+
+**Pipeline**: Auth by relay token → ad selection → context injection → cache check → smart routing (Gemini Flash classifies complexity) → resolve API key (user's own → pool key w/ credits) → stream via AI SDK 6 → log request + earn/spend credits → return SSE stream with ad appended.
+
+IDEs (Cursor, VS Code, Continue.dev) point at `https://relay.vercel.app/api/{relayToken}/v1` and it Just Works as an OpenAI-compatible API.
+
+### Dual Auth Model
+
+1. **Dashboard auth** — Convex Auth with Password provider. Session cookie. Protects `/dashboard/*`.
+2. **Proxy auth** — `relayToken` (random hex) embedded in the URL path. No session needed. IDEs send requests with just the URL.
+
+These are completely separate auth mechanisms for different use cases.
+
+### Convex Backend
+
+All backend logic lives in `convex/`. Key modules:
+
+- `schema.ts` — 6 tables: apiKeys, requests, cache, ads, settings, + authTables
+- `settings.ts` — Per-user config (relay token, routing/cache/ads toggles, credits, system prompt)
+- `apiKeys.ts` — Encrypted API key CRUD (AES-GCM, encrypted client-side before storage)
+- `requests.ts` — Request logging + `getStats` / `getHistoricalStats` (time-bucketed analytics)
+- `credits.ts` — Credit balance, earnFromAd (applies hidden 90% factor), spend
+- `cacheStore.ts` — Hash-based exact cache lookup (vector index defined but not yet used for similarity)
+- `ads.ts` — Sponsored ad CRUD + seed
+
+**Convex from Edge Runtime**: The proxy route can't use Convex hooks — it uses `fetchQuery` and `fetchMutation` from `convex/nextjs` for direct server-side calls. Mutations after response (logging, credit ops) are fire-and-forget with `.catch(console.error)`.
+
+### Smart Routing (`lib/routing.ts`)
+
+Gemini Flash classifies the prompt's first 300 chars as simple/medium/complex. Each tier has a preference order of providers — picks the first one the user has a key for. Known model names (gpt-4o, claude-sonnet-4-5, etc.) bypass classification and route directly via `MODEL_PROVIDER_MAP`.
+
+### API Key Encryption (`lib/encryption.ts`)
+
+AES-GCM 256-bit. Key derived from `NEXT_PUBLIC_ENCRYPTION_KEY` (64-char hex). Encryption happens in the browser via Web Crypto API. Only the encrypted blob + IV are stored in Convex. Decrypted at request time in the Edge runtime.
+
+### Pool Key Fallback (Credit System)
+
+When a user lacks their own API key for a provider but has credits > 0, the proxy falls back to Relay's pool keys (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). Cost is deducted from the user's credit balance. If no key and no credits → 402.
+
+## Ad-Funded Credits (INTERNAL — never expose to users)
+
+- Ads are injected into chat responses as SSE chunks before `data: [DONE]`.
+- **The 90/10 revenue split (90% to user credits, 10% Relay profit) is an internal business model detail. Never show percentages, splits, or profit margins in the UI.**
+- Users see: "Earn free credits from sponsored content" — they do NOT see how the revenue is divided.
+- The `earnFromAd` mutation applies the 90% factor internally. This is invisible to the user.
+
+## Stack
+
+- Next.js 16 App Router + Vercel (Edge Runtime for proxy)
+- Convex (backend, real-time reactive queries, vector search index)
+- Convex Auth (Password provider — not Clerk)
+- AI SDK 6 (`streamText` from `ai`, provider packages `@ai-sdk/{openai,anthropic,google}`)
+- shadcn/ui + Tailwind v4 + recharts
+- PostHog analytics (client: `instrumentation-client.ts`, server: `lib/posthog-server.ts`, reverse proxy via Next.js rewrites to `/ingest/*`)
+- bun as package manager
+
+## Non-Obvious Patterns
+
+- **Tailwind v4**: Uses `@tailwindcss/postcss` plugin, not the older `tailwindcss` PostCSS plugin. `darkMode: ["selector", ".dark"]` in config.
+- **PostHog on Edge**: Instantiated per-request with `flushAt: 1, flushInterval: 0` for serverless.
+- **SSE ad injection**: Ads sent as additional OpenAI-compatible delta chunks (`data: {"choices":[{"delta":{"content":"..."}}]}`) before `data: [DONE]`.
+- **Convex `v.optional()` for migrations**: New schema fields use `v.optional()` so existing documents aren't broken.
+- **Cost table in proxy route**: Token costs are estimated with a hardcoded `MODEL_COSTS` map (per-million-token rates).
 
 ## A Note To The Agent
 

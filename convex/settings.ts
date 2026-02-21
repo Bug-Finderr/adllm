@@ -27,6 +27,7 @@ export const getOrCreate = mutation({
       routingEnabled: true,
       cacheEnabled: true,
       adsEnabled: true,
+      credits: 0,
       systemPromptAddition: "",
       preferredProvider: "anthropic",
     });

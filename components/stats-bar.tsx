@@ -78,8 +78,8 @@ export function StatsBar() {
         }
       />
       <StatCard
-        label="Ad Revenue (24h)"
-        value={`$${(stats.estimatedAdRevenue ?? 0).toFixed(4)}`}
+        label="Credits Earned (24h)"
+        value={`$${(stats.creditsEarned ?? 0).toFixed(4)}`}
         icon={<MegaphoneIcon className="h-4 w-4" />}
         sub={`${stats.adImpressions ?? 0} impressions · ${(stats.costOffset ?? 0).toFixed(0)}% offset`}
       />

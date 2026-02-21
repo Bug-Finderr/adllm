@@ -1,12 +1,15 @@
 "use client";
 
+import { CreditBalanceCard } from "@/components/credit-balance-card";
 import { ProxyUrlCard } from "@/components/proxy-url-card";
 import { RequestLog } from "@/components/request-log";
 import { StatsBar } from "@/components/stats-bar";
+import { UsageChart } from "@/components/usage-chart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { ActivityIcon } from "lucide-react";
+import posthog from "posthog-js";
 import { useEffect } from "react";
 
 export default function DashboardPage() {
@@ -21,6 +24,14 @@ export default function DashboardPage() {
     }
   }, [viewer, settings, getOrCreate]);
 
+  // Track dashboard view once the viewer is loaded
+  useEffect(() => {
+    if (viewer) {
+      posthog.capture("dashboard_viewed", { email: viewer.email });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewer?.email]);
+
   return (
     <div className="flex flex-col gap-4 p-4 md:p-6">
       <div>
@@ -30,9 +41,13 @@ export default function DashboardPage() {
         </p>
       </div>
 
+      <CreditBalanceCard />
+
       <ProxyUrlCard />
 
       <StatsBar />
+
+      <UsageChart />
 
       <Card>
         <CardHeader className="pb-2">

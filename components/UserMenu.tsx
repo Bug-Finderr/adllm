@@ -13,6 +13,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
+import posthog from "posthog-js";
 import { PersonIcon } from "@radix-ui/react-icons";
 
 export function UserMenu() {
@@ -46,7 +47,11 @@ export function UserMenu() {
           <DropdownMenuSeparator />
           <DropdownMenuItem
             className="text-xs"
-            onClick={() => void signOut()}
+            onClick={() => {
+              posthog.capture("user_signed_out");
+              posthog.reset();
+              void signOut();
+            }}
           >
             Sign out
           </DropdownMenuItem>

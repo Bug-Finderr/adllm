@@ -1,8 +1,7 @@
-import { Button } from "@/components/ui/button";
 import { isAuthenticatedNextjs } from "@convex-dev/auth/nextjs/server";
 import { ActivityIcon, DatabaseIcon, ZapIcon } from "lucide-react";
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SplashCta } from "@/components/splash-cta";
 
 export default async function HomePage() {
   if (await isAuthenticatedNextjs()) {
@@ -23,14 +22,7 @@ export default async function HomePage() {
           Point Cursor, VS Code, or Continue.dev at your Relay URL — get smart routing,
           semantic caching, and context injection automatically.
         </p>
-        <div className="flex gap-3 justify-center pt-2">
-          <Link href="/signin">
-            <Button size="lg">Get started free</Button>
-          </Link>
-          <Link href="/signin">
-            <Button size="lg" variant="outline">Sign in</Button>
-          </Link>
-        </div>
+        <SplashCta />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-2xl w-full">

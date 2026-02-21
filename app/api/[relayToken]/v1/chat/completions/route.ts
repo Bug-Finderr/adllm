@@ -108,13 +108,37 @@ export async function POST(
     ad = picked;
   }
 
-  // 1b. Load which providers the user has API keys for
+  // 1b. Load which providers the user has API keys for + check credit balance
   const availableProviders = await fetchQuery(api.apiKeys.getAvailableProviders, { userId });
-  if (availableProviders.length === 0) {
+  const creditBalance = await fetchQuery(api.credits.checkBalance, { userId });
+
+  if (availableProviders.length === 0 && creditBalance <= 0) {
+    const phNoKeys = getPostHog();
+    phNoKeys.capture({
+      distinctId: userId,
+      event: "no_api_keys_error",
+      properties: { credit_balance: creditBalance },
+    });
+    phNoKeys.shutdown().catch(() => {});
     return new Response(
-      JSON.stringify({ error: "No API keys configured. Add at least one in the Relay dashboard." }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ error: "No API keys configured and no credits available. Add a key or enable ads to earn credits." }),
+      { status: 402, headers: { "Content-Type": "application/json" } },
     );
+  }
+
+  // Expand routing to include pool-key providers when user has credits
+  const POOL_KEY_MAP: Record<string, string> = {
+    openai: "OPENAI_API_KEY",
+    anthropic: "ANTHROPIC_API_KEY",
+    google: "GEMINI_API_KEY",
+  };
+  let routingProviders = [...availableProviders] as ("anthropic" | "openai" | "google")[];
+  if (creditBalance > 0) {
+    for (const [prov, envKey] of Object.entries(POOL_KEY_MAP)) {
+      if (process.env[envKey] && !routingProviders.includes(prov as "anthropic" | "openai" | "google")) {
+        routingProviders.push(prov as "anthropic" | "openai" | "google");
+      }
+    }
   }
 
   // 2. Parse request
@@ -170,16 +194,16 @@ export async function POST(
   } else if (settings.routingEnabled && geminiKey) {
     // Smart routing — only routes to providers the user has keys for
     const userText = extractUserText(messages);
-    const decision = await classifyAndRoute(userText, geminiKey, availableProviders as ("anthropic" | "openai" | "google")[]);
+    const decision = await classifyAndRoute(userText, geminiKey, routingProviders);
     provider = decision.provider;
     actualModel = decision.model;
     complexity = decision.complexity;
   } else {
     // Routing off — use preferred provider if available, else first available
     const preferred = settings.preferredProvider;
-    provider = (availableProviders as ("anthropic" | "openai" | "google")[]).includes(preferred)
+    provider = routingProviders.includes(preferred)
       ? preferred
-      : availableProviders[0] as "anthropic" | "openai" | "google";
+      : routingProviders[0];
     actualModel =
       provider === "anthropic"
         ? "claude-sonnet-4-5"
@@ -212,6 +236,15 @@ export async function POST(
         complexity,
         adId: ad?._id,
       }).catch(console.error);
+
+      // Earn credits from ad even on cache hit
+      if (ad) {
+        fetchMutation(api.credits.earnFromAd, {
+          userId,
+          adId: ad._id,
+          cpm: ad.cpm,
+        }).catch(console.error);
+      }
 
       // Track cache hit
       const phCache = getPostHog();
@@ -257,24 +290,42 @@ export async function POST(
     }
   }
 
-  // 6. Get user's API key for the selected provider
+  // 6. Get API key: prefer user's own key, fall back to pool key with credits
+  let apiKey: string;
+  let usedPoolKey = false;
+
   const encryptedKeyData = await fetchQuery(
     api.apiKeys.getEncryptedForProvider,
     { userId, provider },
   );
-  if (!encryptedKeyData) {
-    return new Response(
-      JSON.stringify({
-        error: `No API key configured for provider: ${provider}. Add it in the Relay dashboard.`,
-      }),
-      { status: 400, headers: { "Content-Type": "application/json" } },
-    );
-  }
 
-  const apiKey = await decrypt(
-    encryptedKeyData.encryptedKey,
-    encryptedKeyData.iv,
-  );
+  if (encryptedKeyData) {
+    apiKey = await decrypt(encryptedKeyData.encryptedKey, encryptedKeyData.iv);
+  } else {
+    // No user key — use Relay pool key if credits available
+    const poolKey = process.env[POOL_KEY_MAP[provider] ?? ""];
+    if (!poolKey) {
+      return new Response(
+        JSON.stringify({ error: `No API key for ${provider} and no pool key available.` }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    if (creditBalance <= 0) {
+      const phInsufficient = getPostHog();
+      phInsufficient.capture({
+        distinctId: userId,
+        event: "insufficient_credits_error",
+        properties: { provider },
+      });
+      phInsufficient.shutdown().catch(() => {});
+      return new Response(
+        JSON.stringify({ error: "Insufficient credits. Enable ads to earn credits for API usage." }),
+        { status: 402, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    apiKey = poolKey;
+    usedPoolKey = true;
+  }
 
   // 7. Stream response from provider
   let llmModel;
@@ -338,7 +389,23 @@ export async function POST(
             latencyMs,
             complexity,
             adId: ad?._id,
+            fundedByCredits: usedPoolKey || undefined,
           }).catch(console.error);
+
+          // Credit operations (fire and forget)
+          if (ad) {
+            fetchMutation(api.credits.earnFromAd, {
+              userId,
+              adId: ad._id,
+              cpm: ad.cpm,
+            }).catch(console.error);
+          }
+          if (usedPoolKey && costUsd > 0) {
+            fetchMutation(api.credits.spend, {
+              userId,
+              amount: costUsd,
+            }).catch(console.error);
+          }
 
           // Track successful completion
           const phSuccess = getPostHog();
@@ -356,6 +423,25 @@ export async function POST(
               cache_hit: false,
             },
           });
+          if (usedPoolKey) {
+            phSuccess.capture({
+              distinctId: userId,
+              event: "relay_pool_key_used",
+              properties: { provider, model: actualModel, credit_balance: creditBalance },
+            });
+            phSuccess.capture({
+              distinctId: userId,
+              event: "credits_spent",
+              properties: { amount: costUsd, provider, model: actualModel },
+            });
+          }
+          if (ad) {
+            phSuccess.capture({
+              distinctId: userId,
+              event: "credits_earned",
+              properties: { amount: (ad.cpm * 0.9) / 1000, ad_sponsor: ad.sponsor },
+            });
+          }
           phSuccess.shutdown().catch(() => {});
 
           // Store in cache (fire and forget)

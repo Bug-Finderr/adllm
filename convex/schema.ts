@@ -40,6 +40,7 @@ export default defineSchema({
     ),
     error: v.optional(v.string()),
     adId: v.optional(v.string()),
+    fundedByCredits: v.optional(v.boolean()),
     createdAt: v.number(),
   }).index("by_userId_time", ["userId", "createdAt"]),
 
@@ -76,6 +77,7 @@ export default defineSchema({
     routingEnabled: v.boolean(),
     cacheEnabled: v.boolean(),
     adsEnabled: v.optional(v.boolean()),
+    credits: v.optional(v.number()),
     systemPromptAddition: v.string(),
     preferredProvider: v.union(
       v.literal("anthropic"),

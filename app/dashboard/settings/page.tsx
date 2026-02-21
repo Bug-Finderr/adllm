@@ -253,7 +253,7 @@ export default function SettingsPage() {
           <CardTitle className="text-base">Sponsored Ads</CardTitle>
           <CardDescription>
             Show a small sponsored message at the end of each AI response.
-            Ad revenue offsets your token costs.
+            Earn free credits for API usage.
           </CardDescription>
         </CardHeader>
         <CardContent>

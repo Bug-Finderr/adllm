@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { CheckIcon, CopyIcon, RefreshCwIcon, ZapIcon } from "lucide-react";
+import posthog from "posthog-js";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -24,11 +25,13 @@ export function ProxyUrlCard() {
     await navigator.clipboard.writeText(baseUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    posthog.capture("proxy_url_copied");
   }
 
   async function handleRegenerate() {
     await regenerate();
     toast.success("Relay token regenerated. Update your IDE.");
+    posthog.capture("relay_token_regenerated");
   }
 
   return (
