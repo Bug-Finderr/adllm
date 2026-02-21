@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
 import { toast, Toaster } from "sonner";
+import posthog from "posthog-js";
 
 export default function SignInPage() {
   const { signIn } = useAuthActions();
@@ -16,15 +17,22 @@ export default function SignInPage() {
     setLoading(true);
     const formData = new FormData(e.currentTarget);
     formData.set("flow", flow);
+    const email = formData.get("email") as string;
     try {
       await signIn("password", formData);
+      // Identify the user and capture login/signup event
+      posthog.identify(email, { email });
+      posthog.capture(flow === "signIn" ? "user_signed_in" : "user_signed_up", {
+        email,
+      });
       window.location.href = "/dashboard";
     } catch {
-      toast.error(
+      const errorMsg =
         flow === "signIn"
           ? "Invalid email or password"
-          : "Could not create account. Try a different email.",
-      );
+          : "Could not create account. Try a different email.";
+      toast.error(errorMsg);
+      posthog.capture("sign_in_failed", { flow, email });
     } finally {
       setLoading(false);
     }

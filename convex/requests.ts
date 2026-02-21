@@ -32,9 +32,6 @@ export const getStats = query({
     const total = recent.length;
     const totalCost = recent.reduce((s, r) => s + r.costUsd, 0);
     const cached = recent.filter((r) => r.cached).length;
-    const savedCost = recent
-      .filter((r) => r.cached)
-      .reduce((s, r) => s + (r.costUsd === 0 ? 0.001 : 0), 0); // approximate
     const cacheHitRate = total > 0 ? (cached / total) * 100 : 0;
 
     // Cost by model
@@ -43,7 +40,12 @@ export const getStats = query({
       byModel[r.model] = (byModel[r.model] ?? 0) + r.costUsd;
     }
 
-    return { total, totalCost, cached, cacheHitRate, byModel };
+    // Ad metrics
+    const adImpressions = recent.filter((r) => r.adId).length;
+    const estimatedAdRevenue = (adImpressions / 1000) * 5.0; // $5 avg CPM
+    const costOffset = totalCost > 0 ? (estimatedAdRevenue / totalCost) * 100 : 0;
+
+    return { total, totalCost, cached, cacheHitRate, byModel, adImpressions, estimatedAdRevenue, costOffset };
   },
 });
 
@@ -62,6 +64,7 @@ export const log = mutation({
       v.union(v.literal("simple"), v.literal("medium"), v.literal("complex")),
     ),
     error: v.optional(v.string()),
+    adId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("requests", {

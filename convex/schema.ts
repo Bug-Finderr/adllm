@@ -39,6 +39,7 @@ export default defineSchema({
       ),
     ),
     error: v.optional(v.string()),
+    adId: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_userId_time", ["userId", "createdAt"]),
 
@@ -59,12 +60,22 @@ export default defineSchema({
       filterFields: ["userId"],
     }),
 
+  // Sponsored ads
+  ads: defineTable({
+    sponsor: v.string(),
+    pitch: v.string(),
+    url: v.string(),
+    cpm: v.number(), // revenue per 1000 impressions (USD)
+    active: v.boolean(),
+  }),
+
   // User routing + injection settings
   settings: defineTable({
     userId: v.id("users"),
     relayToken: v.string(), // random hex token for proxy URL auth
     routingEnabled: v.boolean(),
     cacheEnabled: v.boolean(),
+    adsEnabled: v.optional(v.boolean()),
     systemPromptAddition: v.string(),
     preferredProvider: v.union(
       v.literal("anthropic"),

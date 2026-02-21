@@ -60,6 +60,7 @@ export function RequestLog() {
             <TableHead className="text-right">Tokens</TableHead>
             <TableHead className="text-right">Cost</TableHead>
             <TableHead className="text-right">Latency</TableHead>
+            <TableHead>Ad</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
         </TableHeader>
@@ -87,7 +88,7 @@ export function RequestLog() {
                         ? "destructive"
                         : r.complexity === "medium"
                           ? "secondary"
-                          : "outline"
+                          : "outline-solid"
                     }
                     className="text-xs"
                   >
@@ -115,6 +116,15 @@ export function RequestLog() {
               </TableCell>
               <TableCell className="text-right text-xs text-muted-foreground">
                 {r.latencyMs}ms
+              </TableCell>
+              <TableCell className="text-xs">
+                {r.adId ? (
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {r.adId}
+                  </Badge>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </TableCell>
               <TableCell>
                 {r.error ? (

@@ -3,7 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
-import { ActivityIcon, DollarSignIcon, ZapIcon, DatabaseIcon } from "lucide-react";
+import { ActivityIcon, DollarSignIcon, ZapIcon, DatabaseIcon, MegaphoneIcon } from "lucide-react";
 
 function StatCard({
   label,
@@ -35,8 +35,8 @@ export function StatsBar() {
 
   if (!stats) {
     return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {[1, 2, 3, 4, 5].map((i) => (
           <Card key={i}>
             <CardContent className="py-4">
               <div className="h-10 animate-pulse rounded bg-muted" />
@@ -48,7 +48,7 @@ export function StatsBar() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
       <StatCard
         label="Requests (24h)"
         value={stats.total.toString()}
@@ -76,6 +76,12 @@ export function StatsBar() {
             .map(([m]) => m.split("-").slice(0, 2).join("-"))
             .join(", ") || "none yet"
         }
+      />
+      <StatCard
+        label="Ad Revenue (24h)"
+        value={`$${(stats.estimatedAdRevenue ?? 0).toFixed(4)}`}
+        icon={<MegaphoneIcon className="h-4 w-4" />}
+        sub={`${stats.adImpressions ?? 0} impressions · ${(stats.costOffset ?? 0).toFixed(0)}% offset`}
       />
     </div>
   );

@@ -26,6 +26,7 @@ export const getOrCreate = mutation({
       relayToken: generateToken(),
       routingEnabled: true,
       cacheEnabled: true,
+      adsEnabled: true,
       systemPromptAddition: "",
       preferredProvider: "anthropic",
     });
@@ -49,6 +50,7 @@ export const update = mutation({
   args: {
     routingEnabled: v.optional(v.boolean()),
     cacheEnabled: v.optional(v.boolean()),
+    adsEnabled: v.optional(v.boolean()),
     systemPromptAddition: v.optional(v.string()),
     preferredProvider: v.optional(
       v.union(

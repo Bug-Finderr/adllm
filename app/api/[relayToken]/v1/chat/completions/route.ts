@@ -2,15 +2,25 @@ import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { api } from "@/convex/_generated/api";
 import { decrypt } from "@/lib/encryption";
 import { classifyAndRoute, MODEL_PROVIDER_MAP } from "@/lib/routing";
+import { pickAd, formatAdMarkdown, type Ad } from "@/lib/ads";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
+import { PostHog } from "posthog-node";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CoreMessage = any;
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
+
+function getPostHog() {
+  return new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
+    host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    flushAt: 1,
+    flushInterval: 0,
+  });
+}
 
 type Message = { role: "user" | "assistant" | "system"; content: string };
 
@@ -80,6 +90,23 @@ export async function POST(
   }
 
   const userId = settings.userId;
+
+  // Track the incoming request server-side
+  const posthog = getPostHog();
+  posthog.capture({
+    distinctId: userId,
+    event: "chat_completion_requested",
+    properties: { relay_token_prefix: relayToken.slice(0, 6) },
+  });
+  posthog.shutdown().catch(() => {});
+
+  // 1a. Pick ad if enabled — fetch from DB
+  let ad: Ad | null = null;
+  if (settings.adsEnabled !== false) {
+    const activeAds = await fetchQuery(api.ads.listActive, {});
+    const picked = pickAd(activeAds as Ad[]);
+    ad = picked;
+  }
 
   // 1b. Load which providers the user has API keys for
   const availableProviders = await fetchQuery(api.apiKeys.getAvailableProviders, { userId });
@@ -183,7 +210,17 @@ export async function POST(
         cached: true,
         latencyMs,
         complexity,
+        adId: ad?._id,
       }).catch(console.error);
+
+      // Track cache hit
+      const phCache = getPostHog();
+      phCache.capture({
+        distinctId: userId,
+        event: "chat_completion_cache_hit",
+        properties: { model: cached.model, latency_ms: latencyMs },
+      });
+      phCache.shutdown().catch(() => {});
 
       // Stream cached response as SSE
       const cachedText = cached.responseText;
@@ -198,6 +235,11 @@ export async function POST(
               encoder.encode(
                 `data: ${makeOpenAIChunk(chunk, cached.model)}\n\n`,
               ),
+            );
+          }
+          if (ad) {
+            controller.enqueue(
+              encoder.encode(`data: ${makeOpenAIChunk(formatAdMarkdown(ad), cached.model)}\n\n`),
             );
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -269,6 +311,11 @@ export async function POST(
               ),
             );
           }
+          if (ad) {
+            controller.enqueue(
+              encoder.encode(`data: ${makeOpenAIChunk(formatAdMarkdown(ad), actualModel)}\n\n`),
+            );
+          }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 
           // Get token usage (AI SDK v6: inputTokens/outputTokens)
@@ -290,7 +337,26 @@ export async function POST(
             cached: false,
             latencyMs,
             complexity,
+            adId: ad?._id,
           }).catch(console.error);
+
+          // Track successful completion
+          const phSuccess = getPostHog();
+          phSuccess.capture({
+            distinctId: userId,
+            event: "chat_completion_succeeded",
+            properties: {
+              model: actualModel,
+              provider,
+              prompt_tokens: promptTokens,
+              completion_tokens: completionTokens,
+              cost_usd: costUsd,
+              latency_ms: latencyMs,
+              complexity,
+              cache_hit: false,
+            },
+          });
+          phSuccess.shutdown().catch(() => {});
 
           // Store in cache (fire and forget)
           if (settings.cacheEnabled && fullResponse) {
@@ -319,6 +385,21 @@ export async function POST(
             latencyMs,
             error: String(err),
           }).catch(console.error);
+
+          // Track failure
+          const phFail = getPostHog();
+          phFail.capture({
+            distinctId: userId,
+            event: "chat_completion_failed",
+            properties: {
+              model: actualModel,
+              provider,
+              latency_ms: latencyMs,
+              error: String(err),
+            },
+          });
+          phFail.shutdown().catch(() => {});
+
           controller.error(err);
         }
       },
@@ -346,6 +427,20 @@ export async function POST(
       latencyMs,
       error: String(err),
     }).catch(console.error);
+
+    // Track outer failure
+    const phOuterFail = getPostHog();
+    phOuterFail.capture({
+      distinctId: userId,
+      event: "chat_completion_failed",
+      properties: {
+        model: actualModel,
+        provider,
+        latency_ms: latencyMs,
+        error: String(err),
+      },
+    });
+    phOuterFail.shutdown().catch(() => {});
 
     return new Response(
       JSON.stringify({ error: "Provider error", details: String(err) }),

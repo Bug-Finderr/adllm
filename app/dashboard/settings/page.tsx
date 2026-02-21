@@ -1,5 +1,6 @@
 "use client";
 
+import posthog from "posthog-js";
 import { ApiKeyForm } from "@/components/api-key-form";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,23 +72,34 @@ export default function SettingsPage() {
   const activeRouting = getActiveRouting(configuredProviders);
 
   async function toggle(
-    key: "routingEnabled" | "cacheEnabled",
+    key: "routingEnabled" | "cacheEnabled" | "adsEnabled",
     value: boolean,
   ) {
     await update({ [key]: value });
     toast.success("Settings saved");
+    const eventMap: Record<typeof key, string> = {
+      routingEnabled: "smart_routing_toggled",
+      cacheEnabled: "semantic_cache_toggled",
+      adsEnabled: "ad_injection_toggled",
+    };
+    posthog.capture(eventMap[key], { enabled: value });
   }
 
   async function saveSystemPrompt(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    await update({ systemPromptAddition: fd.get("prompt") as string });
+    const prompt = fd.get("prompt") as string;
+    await update({ systemPromptAddition: prompt });
     toast.success("Context saved");
+    posthog.capture("context_prompt_saved", {
+      prompt_length: prompt.trim().length,
+    });
   }
 
   async function setProvider(v: Provider) {
     await update({ preferredProvider: v });
     toast.success("Default provider updated");
+    posthog.capture("fallback_provider_changed", { provider: v });
   }
 
   return (
@@ -231,6 +243,30 @@ export default function SettingsPage() {
             <Switch
               checked={settings?.cacheEnabled ?? true}
               onCheckedChange={(v) => toggle("cacheEnabled", v)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Sponsored Ads</CardTitle>
+          <CardDescription>
+            Show a small sponsored message at the end of each AI response.
+            Ad revenue offsets your token costs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Enable ad injection</Label>
+              <p className="text-xs text-muted-foreground">
+                Appends a sponsor card to each response in your IDE
+              </p>
+            </div>
+            <Switch
+              checked={settings?.adsEnabled ?? true}
+              onCheckedChange={(v) => toggle("adsEnabled", v)}
             />
           </div>
         </CardContent>

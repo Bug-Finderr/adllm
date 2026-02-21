@@ -10,6 +10,7 @@ import { useMutation, useQuery } from "convex/react";
 import { CheckCircle2Icon, KeyIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import posthog from "posthog-js";
 
 const PROVIDERS = [
   {
@@ -51,8 +52,10 @@ export function ApiKeyForm() {
       await upsert({ provider, encryptedKey, iv, keyPreview: preview });
       setValues((v) => ({ ...v, [provider]: "" }));
       toast.success(`${provider} API key saved`);
+      posthog.capture("api_key_saved", { provider });
     } catch {
       toast.error("Failed to save API key");
+      posthog.capture("api_key_save_failed", { provider });
     } finally {
       setSaving(null);
     }
@@ -92,7 +95,10 @@ export function ApiKeyForm() {
                       size="sm"
                       variant="ghost"
                       className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => remove({ id: existing._id })}
+                      onClick={() => {
+                        remove({ id: existing._id });
+                        posthog.capture("api_key_removed", { provider: p.id });
+                      }}
                     >
                       <Trash2Icon className="h-3 w-3" />
                     </Button>

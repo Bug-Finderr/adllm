@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as ads from "../ads.js";
 import type * as apiKeys from "../apiKeys.js";
 import type * as auth from "../auth.js";
 import type * as cacheStore from "../cacheStore.js";
@@ -23,6 +24,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  ads: typeof ads;
   apiKeys: typeof apiKeys;
   auth: typeof auth;
   cacheStore: typeof cacheStore;
