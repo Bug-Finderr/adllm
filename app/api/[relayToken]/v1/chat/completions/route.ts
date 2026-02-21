@@ -1,0 +1,356 @@
+import { fetchMutation, fetchQuery } from "convex/nextjs";
+import { api } from "@/convex/_generated/api";
+import { decrypt } from "@/lib/encryption";
+import { classifyAndRoute, MODEL_PROVIDER_MAP } from "@/lib/routing";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { streamText } from "ai";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CoreMessage = any;
+
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
+
+type Message = { role: "user" | "assistant" | "system"; content: string };
+
+interface OpenAIRequest {
+  model?: string;
+  messages: Message[];
+  stream?: boolean;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+function computeHash(text: string): string {
+  // Simple deterministic hash for edge runtime (no Node crypto)
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash; // Convert to 32-bit int
+  }
+  return hash.toString(36) + text.length.toString(36);
+}
+
+function extractUserText(messages: Message[]): string {
+  const userMessages = messages.filter((m) => m.role === "user");
+  return userMessages.map((m) => m.content).join(" ").trim();
+}
+
+// Cost per 1M tokens (input + output average)
+const MODEL_COSTS: Record<string, number> = {
+  "gemini-2.0-flash": 0.075,
+  "gpt-4o-mini": 0.15,
+  "gpt-4o": 2.5,
+  "claude-sonnet-4-5": 3.0,
+  "claude-3-5-sonnet-20241022": 3.0,
+  "claude-haiku-4-5": 0.8,
+};
+
+function estimateCost(model: string, tokens: number): number {
+  const rate = MODEL_COSTS[model] ?? 1.0;
+  return (tokens / 1_000_000) * rate;
+}
+
+function makeOpenAIChunk(content: string, model: string): string {
+  return JSON.stringify({
+    id: `chatcmpl-relay-${Date.now()}`,
+    object: "chat.completion.chunk",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{ index: 0, delta: { content }, finish_reason: null }],
+  });
+}
+
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ relayToken: string }> },
+) {
+  const start = Date.now();
+  const { relayToken } = await params;
+
+  // 1. Look up user by relay token
+  const settings = await fetchQuery(api.settings.getByToken, { relayToken });
+  if (!settings) {
+    return new Response(
+      JSON.stringify({ error: "Invalid relay token" }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const userId = settings.userId;
+
+  // 2. Parse request
+  let body: OpenAIRequest;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response(JSON.stringify({ error: "Invalid JSON" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const { messages, model: requestedModel = "auto" } = body;
+  if (!messages?.length) {
+    return new Response(JSON.stringify({ error: "messages required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // 3. Context injection — prepend user's system prompt
+  let processedMessages = [...messages];
+  if (settings.systemPromptAddition?.trim()) {
+    const addition = `[Relay Context]\n${settings.systemPromptAddition.trim()}\n`;
+    const existingSystem = processedMessages.find((m) => m.role === "system");
+    if (existingSystem) {
+      processedMessages = processedMessages.map((m) =>
+        m.role === "system"
+          ? { ...m, content: addition + "\n" + m.content }
+          : m,
+      );
+    } else {
+      processedMessages = [
+        { role: "system", content: addition },
+        ...processedMessages,
+      ];
+    }
+  }
+
+  // 4. Determine routing
+  let provider: "anthropic" | "openai" | "google";
+  let actualModel: string;
+  let complexity: "simple" | "medium" | "complex" | undefined;
+
+  const knownModel = MODEL_PROVIDER_MAP[requestedModel];
+  const geminiKey = process.env.GEMINI_API_KEY ?? "";
+
+  if (knownModel) {
+    // Direct model passthrough
+    provider = knownModel.provider;
+    actualModel = knownModel.model;
+  } else if (settings.routingEnabled && geminiKey) {
+    // Smart routing via Gemini Flash classifier
+    const userText = extractUserText(messages);
+    const decision = await classifyAndRoute(userText, geminiKey);
+    provider = decision.provider;
+    actualModel = decision.model;
+    complexity = decision.complexity;
+  } else {
+    // Fallback to preferred provider
+    provider = settings.preferredProvider;
+    actualModel =
+      provider === "anthropic"
+        ? "claude-sonnet-4-5"
+        : provider === "openai"
+          ? "gpt-4o-mini"
+          : "gemini-2.0-flash";
+  }
+
+  // 5. Check semantic cache
+  const promptText = extractUserText(messages);
+  const promptHash = computeHash(promptText);
+
+  if (settings.cacheEnabled) {
+    const cached = await fetchQuery(api.cacheStore.getByHash, {
+      userId,
+      promptHash,
+    });
+    if (cached) {
+      const latencyMs = Date.now() - start;
+      // Log cache hit async
+      fetchMutation(api.requests.log, {
+        userId,
+        model: cached.model,
+        requestedModel,
+        promptTokens: 0,
+        completionTokens: 0,
+        costUsd: 0,
+        cached: true,
+        latencyMs,
+        complexity,
+      }).catch(console.error);
+
+      // Stream cached response as SSE
+      const cachedText = cached.responseText;
+      const stream = new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          // Send in chunks for realistic streaming feel
+          const chunkSize = 20;
+          for (let i = 0; i < cachedText.length; i += chunkSize) {
+            const chunk = cachedText.slice(i, i + chunkSize);
+            controller.enqueue(
+              encoder.encode(
+                `data: ${makeOpenAIChunk(chunk, cached.model)}\n\n`,
+              ),
+            );
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "X-Relay-Cached": "true",
+          "X-Relay-Model": cached.model,
+        },
+      });
+    }
+  }
+
+  // 6. Get user's API key for the selected provider
+  const encryptedKeyData = await fetchQuery(
+    api.apiKeys.getEncryptedForProvider,
+    { userId, provider },
+  );
+  if (!encryptedKeyData) {
+    return new Response(
+      JSON.stringify({
+        error: `No API key configured for provider: ${provider}. Add it in the Relay dashboard.`,
+      }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const apiKey = await decrypt(
+    encryptedKeyData.encryptedKey,
+    encryptedKeyData.iv,
+  );
+
+  // 7. Stream response from provider
+  let llmModel;
+  if (provider === "anthropic") {
+    const anthropic = createAnthropic({ apiKey });
+    llmModel = anthropic(actualModel);
+  } else if (provider === "openai") {
+    const openai = createOpenAI({ apiKey });
+    llmModel = openai(actualModel);
+  } else {
+    const google = createGoogleGenerativeAI({ apiKey });
+    llmModel = google(actualModel);
+  }
+
+  let fullResponse = "";
+  let promptTokens = 0;
+  let completionTokens = 0;
+
+  try {
+    const result = streamText({
+      model: llmModel,
+      messages: processedMessages as CoreMessage[],
+    });
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of result.textStream) {
+            fullResponse += chunk;
+            controller.enqueue(
+              encoder.encode(
+                `data: ${makeOpenAIChunk(chunk, actualModel)}\n\n`,
+              ),
+            );
+          }
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+
+          // Get token usage (AI SDK v6: inputTokens/outputTokens)
+          const usage = await result.usage;
+          promptTokens = (usage as { inputTokens?: number })?.inputTokens ?? 0;
+          completionTokens = (usage as { outputTokens?: number })?.outputTokens ?? 0;
+
+          const latencyMs = Date.now() - start;
+          const costUsd = estimateCost(actualModel, promptTokens + completionTokens);
+
+          // Log to Convex (fire and forget)
+          fetchMutation(api.requests.log, {
+            userId,
+            model: actualModel,
+            requestedModel,
+            promptTokens,
+            completionTokens,
+            costUsd,
+            cached: false,
+            latencyMs,
+            complexity,
+          }).catch(console.error);
+
+          // Store in cache (fire and forget)
+          if (settings.cacheEnabled && fullResponse) {
+            // We skip embedding for now (no async in stream close)
+            // Exact hash match is still useful
+            fetchMutation(api.cacheStore.store, {
+              userId,
+              promptHash,
+              embedding: [], // populated async in future
+              responseText: fullResponse,
+              model: actualModel,
+            }).catch(console.error);
+          }
+
+          controller.close();
+        } catch (err) {
+          const latencyMs = Date.now() - start;
+          fetchMutation(api.requests.log, {
+            userId,
+            model: actualModel,
+            requestedModel,
+            promptTokens: 0,
+            completionTokens: 0,
+            costUsd: 0,
+            cached: false,
+            latencyMs,
+            error: String(err),
+          }).catch(console.error);
+          controller.error(err);
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "X-Relay-Model": actualModel,
+        "X-Relay-Provider": provider,
+        ...(complexity ? { "X-Relay-Complexity": complexity } : {}),
+      },
+    });
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    fetchMutation(api.requests.log, {
+      userId,
+      model: actualModel,
+      requestedModel,
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd: 0,
+      cached: false,
+      latencyMs,
+      error: String(err),
+    }).catch(console.error);
+
+    return new Response(
+      JSON.stringify({ error: "Provider error", details: String(err) }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
+  }
+}
+
+// IDEs may send OPTIONS for CORS preflight
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers":
+        "Content-Type, Authorization, X-API-Key",
+    },
+  });
+}
