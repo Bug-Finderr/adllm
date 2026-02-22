@@ -2,6 +2,12 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+function requireProxySecret(secret: string) {
+  if (secret !== process.env.PROXY_SECRET) {
+    throw new Error("Unauthorized");
+  }
+}
+
 // Dashboard: get current user's credit balance
 export const getBalance = query({
   args: {},
@@ -16,7 +22,7 @@ export const getBalance = query({
   },
 });
 
-// Proxy: check balance by userId (no auth context needed)
+// Proxy: check balance by userId
 export const checkBalance = query({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
@@ -30,20 +36,26 @@ export const checkBalance = query({
 
 const CREDIT_SPLIT = 0.9;
 
-// Earn credits from an ad impression
+// Earn credits from an ad impression (proxy-only, requires secret)
 export const earnFromAd = mutation({
   args: {
     userId: v.id("users"),
     adId: v.string(),
-    cpm: v.number(),
+    proxySecret: v.string(),
   },
-  handler: async (ctx, { userId, cpm }) => {
+  handler: async (ctx, { userId, adId, proxySecret }) => {
+    requireProxySecret(proxySecret);
+    // Look up actual ad CPM from database — never trust caller-supplied values
+    const normalizedId = ctx.db.normalizeId("ads", adId);
+    if (!normalizedId) return 0;
+    const ad = await ctx.db.get(normalizedId);
+    if (!ad || !ad.active) return 0;
     const settings = await ctx.db
       .query("settings")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (!settings) return 0;
-    const earned = (cpm * CREDIT_SPLIT) / 1000;
+    const earned = (ad.cpm * CREDIT_SPLIT) / 1000;
     await ctx.db.patch(settings._id, {
       credits: (settings.credits ?? 0) + earned,
     });
@@ -51,13 +63,15 @@ export const earnFromAd = mutation({
   },
 });
 
-// Spend credits when using adllm pool key
+// Spend credits when using adllm pool key (proxy-only, requires secret)
 export const spend = mutation({
   args: {
     userId: v.id("users"),
     amount: v.number(),
+    proxySecret: v.string(),
   },
-  handler: async (ctx, { userId, amount }) => {
+  handler: async (ctx, { userId, amount, proxySecret }) => {
+    requireProxySecret(proxySecret);
     const settings = await ctx.db
       .query("settings")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

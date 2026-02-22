@@ -22,8 +22,12 @@ export const store = mutation({
     promptHash: v.string(),
     responseText: v.string(),
     model: v.string(),
+    proxySecret: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { proxySecret, ...args }) => {
+    if (proxySecret !== process.env.PROXY_SECRET) {
+      throw new Error("Unauthorized");
+    }
     // Don't store if we already have an exact match
     const existing = await ctx.db
       .query("cache")

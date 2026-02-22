@@ -1,6 +1,8 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
 import { type LanguageModel, streamText } from "ai";
 import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { PostHog } from "posthog-node";
@@ -9,13 +11,24 @@ import { type Ad, formatAdMarkdown, pickAd } from "@/lib/ads";
 import { decrypt } from "@/lib/encryption";
 import { classifyAndRoute, MODEL_PROVIDER_MAP } from "@/lib/routing";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CoreMessage = any;
-
 const CREDIT_SPLIT = 0.9;
+const PROXY_SECRET = process.env.PROXY_SECRET ?? "";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
+
+// Rate limiter: 60 requests per minute per relay token (requires Upstash Redis)
+const ratelimit =
+  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
+    ? new Ratelimit({
+        redis: new Redis({
+          url: process.env.UPSTASH_REDIS_REST_URL,
+          token: process.env.UPSTASH_REDIS_REST_TOKEN,
+        }),
+        limiter: Ratelimit.slidingWindow(60, "1 m"),
+        analytics: true,
+      })
+    : null;
 
 function getPostHog() {
   return new PostHog(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
@@ -35,15 +48,11 @@ interface OpenAIRequest {
   max_tokens?: number;
 }
 
-function computeHash(text: string): string {
-  // Simple deterministic hash for edge runtime (no Node crypto)
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    const char = text.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32-bit int
-  }
-  return hash.toString(36) + text.length.toString(36);
+async function computeHash(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function extractUserText(messages: Message[]): string {
@@ -69,6 +78,15 @@ function estimateCost(model: string, tokens: number): number {
   return (tokens / 1_000_000) * rate;
 }
 
+function safeErrorMessage(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Unknown error";
+  // Strip anything that looks like an API key (sk-..., AIza..., etc.)
+  return msg.replace(
+    /\b(sk-[a-zA-Z0-9_-]{10,}|AIza[a-zA-Z0-9_-]{10,}|Bearer\s+\S+)\b/g,
+    "[REDACTED]",
+  );
+}
+
 function makeOpenAIChunk(content: string, model: string): string {
   return JSON.stringify({
     id: `chatcmpl-relay-${Date.now()}`,
@@ -85,6 +103,26 @@ export async function POST(
 ) {
   const start = Date.now();
   const { relayToken } = await params;
+
+  // 0. Rate limit check
+  if (ratelimit) {
+    const { success, limit, remaining, reset } =
+      await ratelimit.limit(relayToken);
+    if (!success) {
+      return new Response(
+        JSON.stringify({ error: "Rate limit exceeded. Try again later." }),
+        {
+          status: 429,
+          headers: {
+            "Content-Type": "application/json",
+            "X-RateLimit-Limit": String(limit),
+            "X-RateLimit-Remaining": String(remaining),
+            "X-RateLimit-Reset": String(reset),
+          },
+        },
+      );
+    }
+  }
 
   // 1. Look up user by relay token
   const settings = await fetchQuery(api.settings.getByToken, { relayToken });
@@ -232,7 +270,9 @@ export async function POST(
 
   // 5. Check semantic cache
   const promptText = extractUserText(messages);
-  const promptHash = computeHash(promptText);
+  // Include system prompt and model in cache key to avoid stale hits
+  const cacheInput = `${settings.systemPromptAddition ?? ""}|${actualModel}|${promptText}`;
+  const promptHash = await computeHash(cacheInput);
 
   if (settings.cacheEnabled) {
     const cached = await fetchQuery(api.cacheStore.getByHash, {
@@ -252,6 +292,7 @@ export async function POST(
         latencyMs,
         complexity,
         adId: ad?._id,
+        proxySecret: PROXY_SECRET,
       }).catch(console.error);
 
       // Earn credits from ad even on cache hit
@@ -259,7 +300,7 @@ export async function POST(
         fetchMutation(api.credits.earnFromAd, {
           userId,
           adId: ad._id,
-          cpm: ad.cpm,
+          proxySecret: PROXY_SECRET,
         }).catch(console.error);
       }
 
@@ -395,7 +436,7 @@ export async function POST(
   try {
     const result = streamText({
       model: llmModel,
-      messages: processedMessages as CoreMessage[],
+      messages: processedMessages as any[],
     });
 
     const encoder = new TextEncoder();
@@ -435,7 +476,6 @@ export async function POST(
           fetchMutation(api.requests.log, {
             userId,
             model: actualModel,
-
             promptTokens,
             completionTokens,
             costUsd,
@@ -444,6 +484,7 @@ export async function POST(
             complexity,
             adId: ad?._id,
             fundedByCredits: usedPoolKey || undefined,
+            proxySecret: PROXY_SECRET,
           }).catch(console.error);
 
           // Credit operations (fire and forget)
@@ -451,13 +492,14 @@ export async function POST(
             fetchMutation(api.credits.earnFromAd, {
               userId,
               adId: ad._id,
-              cpm: ad.cpm,
+              proxySecret: PROXY_SECRET,
             }).catch(console.error);
           }
           if (usedPoolKey && costUsd > 0) {
             fetchMutation(api.credits.spend, {
               userId,
               amount: costUsd,
+              proxySecret: PROXY_SECRET,
             }).catch(console.error);
           }
 
@@ -511,6 +553,7 @@ export async function POST(
               promptHash,
               responseText: fullResponse,
               model: actualModel,
+              proxySecret: PROXY_SECRET,
             }).catch(console.error);
           }
 
@@ -520,13 +563,13 @@ export async function POST(
           fetchMutation(api.requests.log, {
             userId,
             model: actualModel,
-
             promptTokens: 0,
             completionTokens: 0,
             costUsd: 0,
             cached: false,
             latencyMs,
-            error: String(err),
+            error: safeErrorMessage(err),
+            proxySecret: PROXY_SECRET,
           }).catch(console.error);
 
           // Track failure
@@ -537,7 +580,7 @@ export async function POST(
               model: actualModel,
               provider,
               latency_ms: latencyMs,
-              error: String(err),
+              error: safeErrorMessage(err),
             },
           });
           ph.shutdown().catch(() => {});
@@ -566,7 +609,8 @@ export async function POST(
       costUsd: 0,
       cached: false,
       latencyMs,
-      error: String(err),
+      error: safeErrorMessage(err),
+      proxySecret: PROXY_SECRET,
     }).catch(console.error);
 
     // Track outer failure
@@ -577,13 +621,13 @@ export async function POST(
         model: actualModel,
         provider,
         latency_ms: latencyMs,
-        error: String(err),
+        error: safeErrorMessage(err),
       },
     });
     ph.shutdown().catch(() => {});
 
     return new Response(
-      JSON.stringify({ error: "Provider error", details: String(err) }),
+      JSON.stringify({ error: "An error occurred processing your request" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     );
   }

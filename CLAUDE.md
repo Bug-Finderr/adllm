@@ -47,7 +47,7 @@ All backend logic lives in `convex/`. Key modules:
 
 - `schema.ts` — 6 tables: apiKeys, requests, cache, ads, settings, + authTables
 - `settings.ts` — Per-user config (relay token, routing/cache/ads toggles, credits, system prompt)
-- `apiKeys.ts` — Encrypted API key CRUD (AES-GCM, encrypted client-side before storage)
+- `apiKeys.ts` — Encrypted API key CRUD (AES-GCM, encrypted server-side via server action)
 - `requests.ts` — Request logging + `getStats` / `getHistoricalStats` (time-bucketed analytics)
 - `credits.ts` — Credit balance, earnFromAd (applies hidden 90% factor), spend
 - `cacheStore.ts` — Hash-based exact cache lookup
@@ -61,7 +61,15 @@ Gemini Flash classifies the prompt's first 300 chars as simple/medium/complex. E
 
 ### API Key Encryption (`lib/encryption.ts`)
 
-AES-GCM 256-bit. Key derived from `NEXT_PUBLIC_ENCRYPTION_KEY` (64-char hex). Encryption happens in the browser via Web Crypto API. Only the encrypted blob + IV are stored in Convex. Decrypted at request time in the Edge runtime.
+AES-GCM 256-bit. Key derived from `ENCRYPTION_KEY` env var (64-char hex, server-side only). Encryption happens via a Next.js server action (`app/actions/encrypt-key.ts`). Only the encrypted blob + IV are stored in Convex. Decrypted at request time in the Edge runtime.
+
+### Security
+
+- **Encryption key server-side only**: `ENCRYPTION_KEY` (no `NEXT_PUBLIC_` prefix) — never shipped to browser. Encrypted blobs in Convex are useless without it.
+- **Rate limiting**: Upstash Redis sliding window (60 req/min per relay token). Requires `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` env vars. Gracefully degrades if not set.
+- **Cache hash**: SHA-256 via `crypto.subtle.digest`. Includes system prompt + model + user messages to prevent stale cache hits.
+- **Error sanitization**: Provider errors are redacted (API keys stripped) before logging to PostHog or returning to clients.
+- **Ad sanitization**: Ad `sponsor`/`pitch` fields are stripped of newlines and markdown control chars. URLs are validated.
 
 ### Pool Key Priority (Credit System)
 

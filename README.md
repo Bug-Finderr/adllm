@@ -110,23 +110,3 @@ lib/
   encryption.ts  <- AES-GCM encrypt/decrypt (Web Crypto)
   ads.ts         <- Ad formatting helpers
 ```
-
-## Environment Variables
-
-```bash
-# Convex
-CONVEX_DEPLOYMENT=           # Set by `bunx convex dev`
-NEXT_PUBLIC_CONVEX_URL=      # Your Convex deployment URL
-
-# Encryption (64-char hex, shared between browser + Edge runtime)
-NEXT_PUBLIC_ENCRYPTION_KEY=
-
-# Pool keys (optional -- fund requests via ad credits)
-GEMINI_API_KEY=
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-
-# Analytics
-NEXT_PUBLIC_POSTHOG_KEY=
-NEXT_PUBLIC_POSTHOG_HOST=
-```

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
+import { cn } from "@/lib/utils";
 
 function formatCost(usd: number): string {
   if (usd === 0) return "$0.00";
@@ -71,14 +72,17 @@ export function RequestLog() {
           {requests.map((r: Doc<"requests">) => (
             <TableRow
               key={r._id}
-              className={r.cached ? "bg-green-50/50 dark:bg-green-950/20" : ""}
+              className={cn(r.cached && "bg-green-50/50 dark:bg-green-950/20")}
             >
               <TableCell className="text-muted-foreground text-xs">
                 {formatDistanceToNow(r.createdAt, { addSuffix: true })}
               </TableCell>
               <TableCell>
                 <span
-                  className={`inline-flex items-center rounded px-1.5 py-0.5 font-medium text-xs ${modelColor(r.model)}`}
+                  className={cn(
+                    "inline-flex items-center rounded px-1.5 py-0.5 font-medium text-xs",
+                    modelColor(r.model),
+                  )}
                 >
                   {r.model}
                 </span>
@@ -113,7 +117,7 @@ export function RequestLog() {
                   <span className="text-red-500">error</span>
                 ) : (
                   <span
-                    className={r.cached ? "font-medium text-green-600" : ""}
+                    className={cn(r.cached && "font-medium text-green-600")}
                   >
                     {formatCost(r.costUsd)}
                   </span>

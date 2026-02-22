@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
+import { cn } from "@/lib/utils";
 
 type Provider = "anthropic" | "openai" | "google";
 
@@ -186,9 +187,10 @@ export default function SettingsPage() {
             {activeRouting.map((row) => (
               <div
                 key={row.tier}
-                className={`grid grid-cols-3 border-t px-3 py-2 ${
-                  !row.available ? "opacity-40" : ""
-                }`}
+                className={cn(
+                  "grid grid-cols-3 border-t px-3 py-2",
+                  !row.available && "opacity-40",
+                )}
               >
                 <span className="text-muted-foreground capitalize">
                   {row.tier}

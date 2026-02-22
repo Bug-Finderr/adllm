@@ -79,7 +79,7 @@ export const getAvailableProviders = query({
   },
 });
 
-// Internal: get encrypted key for a provider (used by proxy via HTTP action)
+// Used by proxy route — encrypted blob is useless without server-side ENCRYPTION_KEY
 export const getEncryptedForProvider = query({
   args: {
     userId: v.id("users"),

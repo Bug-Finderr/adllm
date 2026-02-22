@@ -5,12 +5,13 @@ import { CheckCircle2Icon, KeyIcon, Trash2Icon } from "lucide-react";
 import posthog from "posthog-js";
 import { useState } from "react";
 import { toast } from "sonner";
+import { encryptApiKey } from "@/app/actions/encrypt-key";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
-import { encrypt } from "@/lib/encryption";
+import { cn } from "@/lib/utils";
 
 const PROVIDERS = [
   {
@@ -49,7 +50,7 @@ export function ApiKeyForm() {
     if (!value.trim()) return;
     setSaving(provider);
     try {
-      const { encryptedKey, iv } = await encrypt(value.trim());
+      const { encryptedKey, iv } = await encryptApiKey(value.trim());
       const preview = `...${value.trim().slice(-4)}`;
       await upsert({ provider, encryptedKey, iv, keyPreview: preview });
       setValues((v) => ({ ...v, [provider]: "" }));
@@ -82,7 +83,10 @@ export function ApiKeyForm() {
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2">
                   <span
-                    className={`rounded px-1.5 py-0.5 font-medium text-xs ${p.color}`}
+                    className={cn(
+                      "rounded px-1.5 py-0.5 font-medium text-xs",
+                      p.color,
+                    )}
                   >
                     {p.name}
                   </span>
@@ -132,8 +136,8 @@ export function ApiKeyForm() {
           );
         })}
         <p className="text-muted-foreground text-xs">
-          Keys are encrypted with AES-GCM before storage. They never leave your
-          browser unencrypted.
+          Keys are encrypted with AES-256-GCM before storage and only decrypted
+          in-memory during requests.
         </p>
       </CardContent>
     </Card>

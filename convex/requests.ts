@@ -148,7 +148,7 @@ export const getHistoricalStats = query({
   },
 });
 
-// Called by the proxy API route after a request completes
+// Called by the proxy API route after a request completes (proxy-only, requires secret)
 export const log = mutation({
   args: {
     userId: v.id("users"),
@@ -164,8 +164,12 @@ export const log = mutation({
     error: v.optional(v.string()),
     adId: v.optional(v.string()),
     fundedByCredits: v.optional(v.boolean()),
+    proxySecret: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, { proxySecret, ...args }) => {
+    if (proxySecret !== process.env.PROXY_SECRET) {
+      throw new Error("Unauthorized");
+    }
     await ctx.db.insert("requests", {
       ...args,
       createdAt: Date.now(),
