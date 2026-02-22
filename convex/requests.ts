@@ -1,9 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-
-const CREDIT_SPLIT = 0.9;
-const DEFAULT_CPM = 5.0;
+import { requireProxySecret } from "./auth.helpers";
 
 // Shared aggregation logic for stats queries
 function aggregate(
@@ -11,6 +9,7 @@ function aggregate(
     costUsd: number;
     cached: boolean;
     adId?: string;
+    creditsEarned?: number;
     fundedByCredits?: boolean;
   }>,
 ) {
@@ -20,7 +19,10 @@ function aggregate(
   const cacheHitRate = total > 0 ? (cached / total) * 100 : 0;
 
   const adImpressions = requests.filter((r) => r.adId).length;
-  const creditsEarned = (adImpressions / 1000) * DEFAULT_CPM * CREDIT_SPLIT;
+  const creditsEarned = requests.reduce(
+    (s, r) => s + (r.creditsEarned ?? 0),
+    0,
+  );
   const creditFunded = requests.filter((r) => r.fundedByCredits).length;
   const totalSavings = requests
     .filter((r) => r.fundedByCredits)
@@ -135,8 +137,8 @@ export const getHistoricalStats = query({
       if (r.fundedByCredits) {
         buckets[bucket].savings += r.costUsd;
       }
-      if (r.adId) {
-        buckets[bucket].creditsEarned += (DEFAULT_CPM * CREDIT_SPLIT) / 1000;
+      if (r.creditsEarned) {
+        buckets[bucket].creditsEarned += r.creditsEarned;
       }
     }
 
@@ -163,13 +165,12 @@ export const log = mutation({
     ),
     error: v.optional(v.string()),
     adId: v.optional(v.string()),
+    creditsEarned: v.optional(v.number()),
     fundedByCredits: v.optional(v.boolean()),
     proxySecret: v.string(),
   },
   handler: async (ctx, { proxySecret, ...args }) => {
-    if (proxySecret !== process.env.PROXY_SECRET) {
-      throw new Error("Unauthorized");
-    }
+    requireProxySecret(proxySecret);
     await ctx.db.insert("requests", {
       ...args,
       createdAt: Date.now(),

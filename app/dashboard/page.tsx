@@ -30,17 +30,17 @@ export default function DashboardPage() {
     if (viewer) {
       posthog.capture("dashboard_viewed", { email: viewer.email });
     }
-  }, [viewer?.email, viewer]);
+  }, [viewer]);
 
   // Track first visit (no prior requests) for onboarding funnel
   useEffect(() => {
     if (viewer && stats !== undefined && stats !== null && stats.total === 0) {
       posthog.capture("dashboard_first_visit", { email: viewer.email });
     }
-  }, [viewer?.email, stats?.total]);
+  }, [viewer, stats]);
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
       <div>
         <h1 className="font-bold text-2xl tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground text-sm">
@@ -48,9 +48,10 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <CreditBalanceCard />
-
-      <ProxyUrlCard />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <CreditBalanceCard />
+        <ProxyUrlCard />
+      </div>
 
       <StatsBar />
 

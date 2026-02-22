@@ -16,10 +16,9 @@ export function ProxyUrlCard() {
   const regenerate = useMutation(api.settings.regenerateToken);
   const [copied, setCopied] = useState(false);
 
-  const baseUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/api/${settings?.relayToken}/v1`
-      : "";
+  const baseUrl = settings
+    ? `${window.location.origin}/api/${settings.relayToken}/v1`
+    : "";
 
   async function copyUrl() {
     await navigator.clipboard.writeText(baseUrl);
@@ -63,30 +62,35 @@ export function ProxyUrlCard() {
           </Button>
         </div>
 
-        <div className="space-y-1 rounded-md bg-muted p-3 text-xs">
-          <p className="font-medium">Setup Instructions:</p>
-          <p className="text-muted-foreground">
-            <span className="font-mono text-foreground">Cursor</span> → Settings
-            → Models → OpenAI → Override Base URL → paste above
-          </p>
-          <p className="text-muted-foreground">
-            <span className="font-mono text-foreground">VS Code</span> → Chat:
-            Manage Language Models → OpenAI Compatible → paste above
-          </p>
-          <p className="text-muted-foreground">
-            <span className="font-mono text-foreground">Continue.dev</span> →
-            config.yaml → <code>apiBase: [paste above]</code>
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            Set API key to <code className="text-foreground">relay</code> (any
-            value works)
-          </p>
-        </div>
+        <p className="text-muted-foreground text-xs">
+          Paste as <span className="font-medium text-foreground">OpenAI base URL</span> in
+          your IDE. API key can be any value.
+        </p>
+
+        <details className="group">
+          <summary className="cursor-pointer text-muted-foreground text-xs hover:text-foreground">
+            IDE-specific setup instructions
+          </summary>
+          <div className="mt-2 space-y-1 rounded-md bg-muted p-3 text-xs">
+            <p className="text-muted-foreground">
+              <span className="font-mono text-foreground">Cursor</span> →
+              Settings → Models → OpenAI → Override Base URL
+            </p>
+            <p className="text-muted-foreground">
+              <span className="font-mono text-foreground">VS Code</span> →
+              Chat: Manage Language Models → OpenAI Compatible
+            </p>
+            <p className="text-muted-foreground">
+              <span className="font-mono text-foreground">Continue.dev</span> →
+              config.yaml → <code>apiBase:</code>
+            </p>
+          </div>
+        </details>
 
         <div className="flex items-center justify-between">
           <div className="flex gap-2">
             <Badge variant="secondary">Auto-routing</Badge>
-            <Badge variant="secondary">Semantic cache</Badge>
+            <Badge variant="secondary">Prompt cache</Badge>
           </div>
           <Button
             size="sm"
@@ -95,7 +99,7 @@ export function ProxyUrlCard() {
             onClick={handleRegenerate}
           >
             <RefreshCwIcon className="h-3 w-3" />
-            Regenerate token
+            Regenerate
           </Button>
         </div>
       </CardContent>

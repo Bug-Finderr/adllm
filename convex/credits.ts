@@ -1,12 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-
-function requireProxySecret(secret: string) {
-  if (secret !== process.env.PROXY_SECRET) {
-    throw new Error("Unauthorized");
-  }
-}
+import { requireProxySecret } from "./auth.helpers";
 
 // Dashboard: get current user's credit balance
 export const getBalance = query({

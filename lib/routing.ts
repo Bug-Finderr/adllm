@@ -2,9 +2,9 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateObject } from "ai";
 import { z } from "zod";
 
-export type Complexity = "simple" | "medium" | "complex";
+type Complexity = "simple" | "medium" | "complex";
 
-export interface RoutingDecision {
+interface RoutingDecision {
   complexity: Complexity;
   provider: "anthropic" | "openai" | "google";
   model: string;

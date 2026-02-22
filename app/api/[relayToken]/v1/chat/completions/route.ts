@@ -63,6 +63,12 @@ function extractUserText(messages: Message[]): string {
     .trim();
 }
 
+const POOL_KEY_MAP: Record<string, string> = {
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google: "GEMINI_API_KEY",
+};
+
 // Cost per 1M tokens (input + output average)
 const MODEL_COSTS: Record<string, number> = {
   "gemini-2.0-flash": 0.075,
@@ -173,12 +179,6 @@ export async function POST(
     );
   }
 
-  // Pool-key providers first (when user has credits), then user's own providers
-  const POOL_KEY_MAP: Record<string, string> = {
-    openai: "OPENAI_API_KEY",
-    anthropic: "ANTHROPIC_API_KEY",
-    google: "GEMINI_API_KEY",
-  };
   const routingProviders: ("anthropic" | "openai" | "google")[] = [];
   if (creditBalance > 0) {
     for (const [prov, envKey] of Object.entries(POOL_KEY_MAP)) {
@@ -235,6 +235,7 @@ export async function POST(
   let provider: "anthropic" | "openai" | "google";
   let actualModel: string;
   let complexity: "simple" | "medium" | "complex" | undefined;
+  const userText = extractUserText(messages);
 
   const knownModel = MODEL_PROVIDER_MAP[requestedModel];
   const geminiKey = process.env.GEMINI_API_KEY ?? "";
@@ -244,8 +245,6 @@ export async function POST(
     provider = knownModel.provider;
     actualModel = knownModel.model;
   } else if (settings.routingEnabled && geminiKey) {
-    // Smart routing — only routes to providers the user has keys for
-    const userText = extractUserText(messages);
     const decision = await classifyAndRoute(
       userText,
       geminiKey,
@@ -268,10 +267,8 @@ export async function POST(
           : "gemini-2.0-flash";
   }
 
-  // 5. Check semantic cache
-  const promptText = extractUserText(messages);
-  // Include system prompt and model in cache key to avoid stale hits
-  const cacheInput = `${settings.systemPromptAddition ?? ""}|${actualModel}|${promptText}`;
+  // 5. Check prompt cache
+  const cacheInput = `${settings.systemPromptAddition ?? ""}|${actualModel}|${userText}`;
   const promptHash = await computeHash(cacheInput);
 
   if (settings.cacheEnabled) {
@@ -292,6 +289,7 @@ export async function POST(
         latencyMs,
         complexity,
         adId: ad?._id,
+        creditsEarned: ad ? (ad.cpm * CREDIT_SPLIT) / 1000 : undefined,
         proxySecret: PROXY_SECRET,
       }).catch(console.error);
 
@@ -461,10 +459,12 @@ export async function POST(
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 
           // Get token usage (AI SDK v6: inputTokens/outputTokens)
-          const usage = await result.usage;
-          promptTokens = (usage as { inputTokens?: number })?.inputTokens ?? 0;
-          completionTokens =
-            (usage as { outputTokens?: number })?.outputTokens ?? 0;
+          const usage = (await result.usage) as {
+            inputTokens?: number;
+            outputTokens?: number;
+          };
+          promptTokens = usage.inputTokens ?? 0;
+          completionTokens = usage.outputTokens ?? 0;
 
           const latencyMs = Date.now() - start;
           const costUsd = estimateCost(
@@ -483,6 +483,7 @@ export async function POST(
             latencyMs,
             complexity,
             adId: ad?._id,
+            creditsEarned: ad ? (ad.cpm * CREDIT_SPLIT) / 1000 : undefined,
             fundedByCredits: usedPoolKey || undefined,
             proxySecret: PROXY_SECRET,
           }).catch(console.error);

@@ -27,7 +27,7 @@ export function UsageChart() {
     return (
       <Card>
         <CardContent className="py-4">
-          <div className="h-[280px] animate-pulse rounded bg-muted" />
+          <div className="h-70 animate-pulse rounded bg-muted" />
         </CardContent>
       </Card>
     );
@@ -44,7 +44,7 @@ export function UsageChart() {
           <RangeToggle range={range} setRange={setRange} />
         </CardHeader>
         <CardContent>
-          <div className="flex h-[280px] items-center justify-center text-muted-foreground text-sm">
+          <div className="flex h-70 items-center justify-center text-muted-foreground text-sm">
             No data for this time range yet. Make some requests!
           </div>
         </CardContent>
@@ -68,34 +68,6 @@ export function UsageChart() {
         <RangeToggle range={range} setRange={setRange} />
       </CardHeader>
       <CardContent>
-        <div className="mb-4 grid grid-cols-5 gap-4 text-center text-xs">
-          <div>
-            <p className="text-muted-foreground">Requests</p>
-            <p className="font-bold text-lg">{stats.total}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Total Cost</p>
-            <p className="font-bold text-lg">${stats.totalCost.toFixed(4)}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">You Saved</p>
-            <p className="font-bold text-emerald-600 text-lg">
-              ${(stats.totalSavings ?? 0).toFixed(4)}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Credits Earned</p>
-            <p className="font-bold text-green-600 text-lg">
-              ${stats.creditsEarned.toFixed(4)}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Credit-Funded</p>
-            <p className="font-bold text-lg text-purple-600">
-              {stats.creditFunded}
-            </p>
-          </div>
-        </div>
         <ResponsiveContainer width="100%" height={240}>
           <AreaChart data={stats.timeSeries}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />

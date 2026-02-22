@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 
 type Provider = "anthropic" | "openai" | "google";
 
-// Must mirror lib/routing.ts ROUTING_PREFERENCES
+// Display version of lib/routing.ts ROUTING_PREFERENCES (adds display + cost fields)
 const ROUTING_PREFERENCES: Record<
   string,
   Array<{ provider: Provider; model: string; display: string; cost: string }>
@@ -144,7 +144,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4 p-4 md:p-6">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-4 md:p-6">
       <div>
         <h1 className="font-bold text-2xl tracking-tight">Settings</h1>
         <p className="text-muted-foreground text-sm">
@@ -269,15 +269,15 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Semantic Cache</CardTitle>
+          <CardTitle className="text-base">Prompt Cache</CardTitle>
           <CardDescription>
-            Similar prompts return cached responses instantly at $0.00 cost.
+            Identical prompts return cached responses instantly at $0.00 cost.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <Label>Enable semantic cache</Label>
+              <Label>Enable prompt cache</Label>
               <p className="text-muted-foreground text-xs">
                 Identical prompts return cached responses instantly
               </p>

@@ -35,6 +35,7 @@ export default defineSchema({
     ),
     error: v.optional(v.string()),
     adId: v.optional(v.string()),
+    creditsEarned: v.optional(v.number()),
     fundedByCredits: v.optional(v.boolean()),
     createdAt: v.number(),
   }).index("by_userId_time", ["userId", "createdAt"]),
@@ -46,7 +47,7 @@ export default defineSchema({
     responseText: v.string(),
     model: v.string(),
     createdAt: v.number(),
-  }).index("by_hash", ["promptHash"]),
+  }).index("by_user_hash", ["userId", "promptHash"]),
 
   // Sponsored ads
   ads: defineTable({

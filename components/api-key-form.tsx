@@ -15,26 +15,26 @@ import { cn } from "@/lib/utils";
 
 const PROVIDERS = [
   {
-    id: "anthropic" as const,
+    id: "anthropic",
     name: "Anthropic",
     placeholder: "sk-ant-...",
     color:
       "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   },
   {
-    id: "openai" as const,
+    id: "openai",
     name: "OpenAI",
     placeholder: "sk-...",
     color:
       "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   },
   {
-    id: "google" as const,
+    id: "google",
     name: "Google (Gemini)",
     placeholder: "AIzaSy...",
     color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   },
-];
+] as const;
 
 export function ApiKeyForm() {
   const apiKeys = useQuery(api.apiKeys.list);
