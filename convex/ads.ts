@@ -24,6 +24,9 @@ export const create = mutation({
     pitch: v.string(),
     url: v.string(),
     cpm: v.number(),
+    format: v.optional(v.union(v.literal("badge"), v.literal("text"))),
+    logoSlug: v.optional(v.string()),
+    badgeColor: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return ctx.db.insert("ads", { ...args, active: true });
@@ -52,11 +55,13 @@ export const seed = mutation({
     if (existing.length > 0) return; // already seeded
 
     const defaults = [
-      { sponsor: "Vercel", pitch: "Deploy your frontend instantly. Zero config, infinite scale.", url: "vercel.com/new", cpm: 5.0 },
-      { sponsor: "Convex", pitch: "The reactive backend for AI apps. Real-time, serverless, TypeScript-native.", url: "convex.dev", cpm: 4.5 },
-      { sponsor: "Supabase", pitch: "Open source Firebase alternative. Postgres, Auth, Storage, Realtime.", url: "supabase.com", cpm: 4.0 },
-      { sponsor: "Cursor", pitch: "The AI-native code editor. Write code faster with built-in AI.", url: "cursor.com", cpm: 6.0 },
-      { sponsor: "Railway", pitch: "Deploy anything. Databases, cron jobs, and apps in seconds.", url: "railway.app", cpm: 3.5 },
+      // Badge format (shields.io with logos)
+      { sponsor: "Vercel", pitch: "Deploy instantly, scale infinitely.", url: "vercel.com/new", cpm: 5.0, format: "badge" as const, logoSlug: "vercel", badgeColor: "000" },
+      { sponsor: "Supabase", pitch: "Open source Firebase alternative. Postgres, Auth, Realtime.", url: "supabase.com", cpm: 4.0, format: "badge" as const, logoSlug: "supabase", badgeColor: "3ECF8E" },
+      { sponsor: "Cursor", pitch: "The AI-native code editor. Ship faster with built-in AI.", url: "cursor.com", cpm: 6.0, format: "badge" as const, logoSlug: "cursor", badgeColor: "000" },
+      // Text format (clean italic single-line)
+      { sponsor: "Convex", pitch: "The reactive backend for AI apps. Real-time, serverless, TypeScript-native.", url: "convex.dev", cpm: 4.5, format: "text" as const },
+      { sponsor: "Railway", pitch: "Deploy anything. Databases, cron jobs, and apps in seconds.", url: "railway.app", cpm: 3.5, format: "text" as const },
     ];
 
     for (const ad of defaults) {

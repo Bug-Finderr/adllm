@@ -3,7 +3,7 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
-import { ActivityIcon, DollarSignIcon, ZapIcon, DatabaseIcon, MegaphoneIcon } from "lucide-react";
+import { ActivityIcon, DollarSignIcon, PiggyBankIcon, DatabaseIcon, MegaphoneIcon } from "lucide-react";
 
 function StatCard({
   label,
@@ -66,16 +66,10 @@ export function StatsBar() {
         sub={`${stats.cached} of ${stats.total} requests`}
       />
       <StatCard
-        label="Models Used"
-        value={Object.keys(stats.byModel).length.toString()}
-        icon={<ZapIcon className="h-4 w-4" />}
-        sub={
-          Object.entries(stats.byModel)
-            .sort(([, a], [, b]) => (b as number) - (a as number))
-            .slice(0, 2)
-            .map(([m]) => m.split("-").slice(0, 2).join("-"))
-            .join(", ") || "none yet"
-        }
+        label="You Saved (24h)"
+        value={`$${(stats.totalSavings ?? 0).toFixed(4)}`}
+        icon={<PiggyBankIcon className="h-4 w-4" />}
+        sub={`${stats.creditFunded ?? 0} requests on Relay inference`}
       />
       <StatCard
         label="Credits Earned (24h)"

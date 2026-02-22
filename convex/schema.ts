@@ -68,6 +68,9 @@ export default defineSchema({
     url: v.string(),
     cpm: v.number(), // revenue per 1000 impressions (USD)
     active: v.boolean(),
+    format: v.optional(v.union(v.literal("badge"), v.literal("text"))), // A/B: badge (shields.io) vs text-only
+    logoSlug: v.optional(v.string()), // Simple Icons slug for shields.io badge (e.g. "vercel", "supabase")
+    badgeColor: v.optional(v.string()), // hex color for badge background (e.g. "000", "3ECF8E")
   }),
 
   // User routing + injection settings

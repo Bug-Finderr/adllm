@@ -100,11 +100,20 @@ export async function POST(
   });
   posthog.shutdown().catch(() => {});
 
-  // 1a. Pick ad if enabled — fetch from DB
+  // 1a. Pick ad if enabled — fetch from DB, apply A/B format via PostHog
   let ad: Ad | null = null;
   if (settings.adsEnabled !== false) {
     const activeAds = await fetchQuery(api.ads.listActive, {});
     const picked = pickAd(activeAds as Ad[]);
+    if (picked) {
+      // Use PostHog feature flag to override ad format for A/B test
+      const phFlag = getPostHog();
+      const adFormatVariant = await phFlag.getFeatureFlag("ad-format-test", userId);
+      phFlag.shutdown().catch(() => {});
+      if (adFormatVariant === "badge" || adFormatVariant === "text") {
+        picked.format = adFormatVariant;
+      }
+    }
     ad = picked;
   }
 
@@ -126,18 +135,23 @@ export async function POST(
     );
   }
 
-  // Expand routing to include pool-key providers when user has credits
+  // Pool-key providers first (when user has credits), then user's own providers
   const POOL_KEY_MAP: Record<string, string> = {
     openai: "OPENAI_API_KEY",
     anthropic: "ANTHROPIC_API_KEY",
     google: "GEMINI_API_KEY",
   };
-  let routingProviders = [...availableProviders] as ("anthropic" | "openai" | "google")[];
+  const routingProviders: ("anthropic" | "openai" | "google")[] = [];
   if (creditBalance > 0) {
     for (const [prov, envKey] of Object.entries(POOL_KEY_MAP)) {
-      if (process.env[envKey] && !routingProviders.includes(prov as "anthropic" | "openai" | "google")) {
+      if (process.env[envKey]) {
         routingProviders.push(prov as "anthropic" | "openai" | "google");
       }
+    }
+  }
+  for (const prov of availableProviders) {
+    if (!routingProviders.includes(prov as "anthropic" | "openai" | "google")) {
+      routingProviders.push(prov as "anthropic" | "openai" | "google");
     }
   }
 
@@ -290,27 +304,26 @@ export async function POST(
     }
   }
 
-  // 6. Get API key: prefer user's own key, fall back to pool key with credits
+  // 6. Get API key: prefer pool key (credits), fall back to user's own key
   let apiKey: string;
   let usedPoolKey = false;
 
-  const encryptedKeyData = await fetchQuery(
-    api.apiKeys.getEncryptedForProvider,
-    { userId, provider },
-  );
+  const poolKey = process.env[POOL_KEY_MAP[provider] ?? ""];
 
-  if (encryptedKeyData) {
-    apiKey = await decrypt(encryptedKeyData.encryptedKey, encryptedKeyData.iv);
+  if (poolKey && creditBalance > 0) {
+    // Pool key available and user has credits — use Relay inference
+    apiKey = poolKey;
+    usedPoolKey = true;
   } else {
-    // No user key — use Relay pool key if credits available
-    const poolKey = process.env[POOL_KEY_MAP[provider] ?? ""];
-    if (!poolKey) {
-      return new Response(
-        JSON.stringify({ error: `No API key for ${provider} and no pool key available.` }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    if (creditBalance <= 0) {
+    // Fall back to user's own key
+    const encryptedKeyData = await fetchQuery(
+      api.apiKeys.getEncryptedForProvider,
+      { userId, provider },
+    );
+    if (encryptedKeyData) {
+      apiKey = await decrypt(encryptedKeyData.encryptedKey, encryptedKeyData.iv);
+    } else if (poolKey) {
+      // Pool key exists but no credits and no user key
       const phInsufficient = getPostHog();
       phInsufficient.capture({
         distinctId: userId,
@@ -322,9 +335,30 @@ export async function POST(
         JSON.stringify({ error: "Insufficient credits. Enable ads to earn credits for API usage." }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
+    } else {
+      return new Response(
+        JSON.stringify({ error: `No API key for ${provider} and no pool key available.` }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
     }
-    apiKey = poolKey;
-    usedPoolKey = true;
+  }
+
+  // 6a. Cost pre-check: ensure credits cover estimated cost when using pool key
+  if (usedPoolKey) {
+    const inputTokenEstimate = JSON.stringify(processedMessages).length / 4;
+    const estimatedCost = estimateCost(actualModel, inputTokenEstimate * 2);
+    if (estimatedCost > creditBalance) {
+      // Credits probably won't cover this — try falling back to user's own key
+      const encryptedKeyData = await fetchQuery(
+        api.apiKeys.getEncryptedForProvider,
+        { userId, provider },
+      );
+      if (encryptedKeyData) {
+        apiKey = await decrypt(encryptedKeyData.encryptedKey, encryptedKeyData.iv);
+        usedPoolKey = false;
+      }
+      // If no user key, proceed with pool key anyway (best-effort)
+    }
   }
 
   // 7. Stream response from provider
@@ -439,7 +473,7 @@ export async function POST(
             phSuccess.capture({
               distinctId: userId,
               event: "credits_earned",
-              properties: { amount: (ad.cpm * 0.9) / 1000, ad_sponsor: ad.sponsor },
+              properties: { amount: (ad.cpm * 0.9) / 1000, ad_sponsor: ad.sponsor, ad_format: ad.format ?? "text" },
             });
           }
           phSuccess.shutdown().catch(() => {});

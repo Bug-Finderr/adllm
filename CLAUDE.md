@@ -30,7 +30,7 @@ Always use `bun` / `bunx` — never npm, npx, pnpm, or yarn.
 
 `app/api/[relayToken]/v1/chat/completions/route.ts` — Edge Runtime, OpenAI-compatible endpoint.
 
-**Pipeline**: Auth by relay token → ad selection → context injection → cache check → smart routing (Gemini Flash classifies complexity) → resolve API key (user's own → pool key w/ credits) → stream via AI SDK 6 → log request + earn/spend credits → return SSE stream with ad appended.
+**Pipeline**: Auth by relay token → ad selection → context injection → cache check → smart routing (Gemini Flash classifies complexity) → resolve API key (pool key w/ credits → user's own as fallback) → stream via AI SDK 6 → log request + earn/spend credits → return SSE stream with ad appended.
 
 IDEs (Cursor, VS Code, Continue.dev) point at `https://relay.vercel.app/api/{relayToken}/v1` and it Just Works as an OpenAI-compatible API.
 
@@ -63,9 +63,9 @@ Gemini Flash classifies the prompt's first 300 chars as simple/medium/complex. E
 
 AES-GCM 256-bit. Key derived from `NEXT_PUBLIC_ENCRYPTION_KEY` (64-char hex). Encryption happens in the browser via Web Crypto API. Only the encrypted blob + IV are stored in Convex. Decrypted at request time in the Edge runtime.
 
-### Pool Key Fallback (Credit System)
+### Pool Key Priority (Credit System)
 
-When a user lacks their own API key for a provider but has credits > 0, the proxy falls back to Relay's pool keys (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). Cost is deducted from the user's credit balance. If no key and no credits → 402.
+When a user has credits > 0, the proxy **prefers Relay's pool keys** (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) over the user's own keys. This maximizes visible savings ("You saved $X"). A cost pre-check estimates whether credits cover the request; if not, it silently falls back to the user's own key. Cost is deducted from the user's credit balance after streaming. If no pool key and no user key and no credits → 402.
 
 ## Ad-Funded Credits (INTERNAL — never expose to users)
 

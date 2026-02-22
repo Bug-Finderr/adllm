@@ -68,7 +68,7 @@ export function UsageChart() {
         <RangeToggle range={range} setRange={setRange} />
       </CardHeader>
       <CardContent>
-        <div className="mb-4 grid grid-cols-4 gap-4 text-center text-xs">
+        <div className="mb-4 grid grid-cols-5 gap-4 text-center text-xs">
           <div>
             <p className="text-muted-foreground">Requests</p>
             <p className="text-lg font-bold">{stats.total}</p>
@@ -76,6 +76,10 @@ export function UsageChart() {
           <div>
             <p className="text-muted-foreground">Total Cost</p>
             <p className="text-lg font-bold">${stats.totalCost.toFixed(4)}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">You Saved</p>
+            <p className="text-lg font-bold text-emerald-600">${(stats.totalSavings ?? 0).toFixed(4)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Credits Earned</p>
@@ -100,7 +104,7 @@ export function UsageChart() {
               labelFormatter={(label) => formatTimestamp(Number(label))}
               formatter={(value, name) => [
                 `$${Number(value).toFixed(6)}`,
-                name === "cost" ? "Cost" : "Credits Earned",
+                name === "cost" ? "Cost" : name === "savings" ? "You Saved" : "Credits Earned",
               ]}
             />
             <Area
@@ -110,6 +114,14 @@ export function UsageChart() {
               fill="hsl(221, 83%, 53%)"
               fillOpacity={0.1}
               name="cost"
+            />
+            <Area
+              type="monotone"
+              dataKey="savings"
+              stroke="hsl(160, 84%, 39%)"
+              fill="hsl(160, 84%, 39%)"
+              fillOpacity={0.15}
+              name="savings"
             />
             <Area
               type="monotone"

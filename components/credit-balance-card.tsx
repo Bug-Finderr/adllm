@@ -23,7 +23,11 @@ export function CreditBalanceCard() {
           <p className="text-xs text-muted-foreground">
             {stats?.adImpressions ?? 0} ad impressions earned you ~$
             {(stats?.creditsEarned ?? 0).toFixed(4)} today
-            {stats?.creditFunded ? ` · ${stats.creditFunded} requests funded by credits` : ""}
+            {(stats?.totalSavings ?? 0) > 0
+              ? ` · You saved $${stats!.totalSavings.toFixed(4)} using Relay inference`
+              : stats?.creditFunded
+                ? ` · ${stats.creditFunded} requests funded by credits`
+                : ""}
           </p>
         </div>
         <div className="text-right">

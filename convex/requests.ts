@@ -43,8 +43,11 @@ export const getStats = query({
     const creditsEarned = (adImpressions / 1000) * 5.0 * 0.9; // 90% of $5 avg CPM
     const costOffset = totalCost > 0 ? (creditsEarned / totalCost) * 100 : 0;
     const creditFunded = recent.filter((r) => r.fundedByCredits).length;
+    const totalSavings = recent
+      .filter((r) => r.fundedByCredits)
+      .reduce((s, r) => s + r.costUsd, 0);
 
-    return { total, totalCost, cached, cacheHitRate, byModel, adImpressions, creditsEarned, costOffset, creditFunded };
+    return { total, totalCost, cached, cacheHitRate, byModel, adImpressions, creditsEarned, costOffset, creditFunded, totalSavings };
   },
 });
 
@@ -90,7 +93,7 @@ export const getHistoricalStats = query({
     const adImpressions = requests.filter((r) => r.adId).length;
     const creditsEarned = (adImpressions / 1000) * 5.0 * 0.9;
     const creditFunded = requests.filter((r) => r.fundedByCredits).length;
-    const creditCost = requests
+    const totalSavings = requests
       .filter((r) => r.fundedByCredits)
       .reduce((s, r) => s + r.costUsd, 0);
     const costOffset = totalCost > 0 ? (creditsEarned / totalCost) * 100 : 0;
@@ -105,18 +108,19 @@ export const getHistoricalStats = query({
 
     const buckets: Record<
       number,
-      { requests: number; cost: number; creditsEarned: number; creditsSpent: number }
+      { requests: number; cost: number; creditsEarned: number; creditsSpent: number; savings: number }
     > = {};
 
     for (const r of requests) {
       const bucket = Math.floor(r.createdAt / bucketMs) * bucketMs;
       if (!buckets[bucket]) {
-        buckets[bucket] = { requests: 0, cost: 0, creditsEarned: 0, creditsSpent: 0 };
+        buckets[bucket] = { requests: 0, cost: 0, creditsEarned: 0, creditsSpent: 0, savings: 0 };
       }
       buckets[bucket].requests++;
       buckets[bucket].cost += r.costUsd;
       if (r.fundedByCredits) {
         buckets[bucket].creditsSpent += r.costUsd;
+        buckets[bucket].savings += r.costUsd;
       }
       if (r.adId) {
         buckets[bucket].creditsEarned += (5.0 * 0.9) / 1000;
@@ -136,7 +140,7 @@ export const getHistoricalStats = query({
       adImpressions,
       creditsEarned,
       creditFunded,
-      creditCost,
+      totalSavings,
       costOffset,
       timeSeries,
     };

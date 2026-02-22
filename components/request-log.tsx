@@ -119,9 +119,12 @@ export function RequestLog() {
               </TableCell>
               <TableCell className="text-xs">
                 {r.fundedByCredits ? (
-                  <Badge className="bg-purple-100 text-purple-700 text-xs hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400">
-                    credits
-                  </Badge>
+                  <span className="flex items-center gap-1">
+                    <Badge className="bg-purple-100 text-purple-700 text-xs hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400">
+                      credits
+                    </Badge>
+                    <span className="text-emerald-600 font-medium">saved {formatCost(r.costUsd)}</span>
+                  </span>
                 ) : (
                   <span className="text-muted-foreground">own key</span>
                 )}
