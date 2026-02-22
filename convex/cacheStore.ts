@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Exact hash lookup (free, no embedding cost)
+// Exact hash lookup
 export const getByHash = query({
   args: {
     userId: v.id("users"),
@@ -16,16 +16,10 @@ export const getByHash = query({
   },
 });
 
-export const getById = query({
-  args: { id: v.id("cache") },
-  handler: async (ctx, { id }) => ctx.db.get(id),
-});
-
 export const store = mutation({
   args: {
     userId: v.id("users"),
     promptHash: v.string(),
-    embedding: v.array(v.float64()),
     responseText: v.string(),
     model: v.string(),
   },
@@ -38,27 +32,5 @@ export const store = mutation({
       .first();
     if (existing) return;
     await ctx.db.insert("cache", { ...args, createdAt: Date.now() });
-  },
-});
-
-export const clear = mutation({
-  args: { userId: v.id("users") },
-  handler: async (ctx, { userId }) => {
-    const all = await ctx.db
-      .query("cache")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    await Promise.all(all.map((c) => ctx.db.delete(c._id)));
-  },
-});
-
-export const getCount = query({
-  args: { userId: v.id("users") },
-  handler: async (ctx, { userId }) => {
-    const all = await ctx.db
-      .query("cache")
-      .withIndex("by_userId", (q) => q.eq("userId", userId))
-      .collect();
-    return all.length;
   },
 });

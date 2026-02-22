@@ -1,5 +1,9 @@
 "use client";
 
+import { useAuthActions } from "@convex-dev/auth/react";
+import { PersonIcon } from "@radix-ui/react-icons";
+import { useQuery } from "convex/react";
+import posthog from "posthog-js";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,23 +15,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/convex/_generated/api";
-import { useAuthActions } from "@convex-dev/auth/react";
-import { useQuery } from "convex/react";
-import posthog from "posthog-js";
-import { PersonIcon } from "@radix-ui/react-icons";
 
 export function UserMenu() {
   const { signOut } = useAuthActions();
   const viewer = useQuery(api.users.viewer);
 
   return (
-    <div className="flex items-center gap-2 text-sm font-medium">
+    <div className="flex items-center gap-2 font-medium text-sm">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 gap-2 px-2 text-xs text-muted-foreground"
+            className="h-8 gap-2 px-2 text-muted-foreground text-xs"
           >
             <PersonIcon className="h-4 w-4" />
             <span className="max-w-[120px] truncate">
@@ -36,7 +36,7 @@ export function UserMenu() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground truncate">
+          <DropdownMenuLabel className="truncate font-normal text-muted-foreground text-xs">
             {viewer?.email}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />

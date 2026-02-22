@@ -10,22 +10,22 @@ export default async function HomePage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-12 px-4 py-16">
-      <div className="text-center space-y-4 max-w-xl">
-        <div className="flex items-center justify-center gap-2 text-4xl font-bold">
+      <div className="max-w-xl space-y-4 text-center">
+        <div className="flex items-center justify-center gap-2 font-bold text-4xl">
           <ZapIcon className="h-10 w-10 text-primary" />
-          <span>Relay</span>
+          <span>AdLLM</span>
         </div>
-        <p className="text-xl text-muted-foreground">
+        <p className="text-muted-foreground text-xl">
           One endpoint. All your models. Bring your own keys.
         </p>
-        <p className="text-sm text-muted-foreground">
-          Point Cursor, VS Code, or Continue.dev at your Relay URL — get smart routing,
-          semantic caching, and context injection automatically.
+        <p className="text-muted-foreground text-sm">
+          Point your IDE at your AdLLM URL — every AI response earns you credits
+          from sponsored content, so your API costs go down the more you code.
         </p>
         <SplashCta />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 max-w-2xl w-full">
+      <div className="grid w-full max-w-2xl grid-cols-1 gap-4 sm:grid-cols-3">
         <FeatureCard
           icon={<ZapIcon className="h-5 w-5" />}
           title="Smart Routing"
@@ -43,9 +43,9 @@ export default async function HomePage() {
         />
       </div>
 
-      <div className="text-center space-y-2">
-        <p className="text-xs text-muted-foreground">Works with</p>
-        <div className="flex gap-4 text-sm font-medium text-muted-foreground">
+      <div className="space-y-2 text-center">
+        <p className="text-muted-foreground text-xs">Works with</p>
+        <div className="flex gap-4 font-medium text-muted-foreground text-sm">
           <span>Cursor</span>
           <span>·</span>
           <span>VS Code Copilot</span>
@@ -69,10 +69,10 @@ function FeatureCard({
   desc: string;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-4 space-y-2">
+    <div className="space-y-2 rounded-lg border bg-card p-4">
       <div className="text-primary">{icon}</div>
       <p className="font-medium text-sm">{title}</p>
-      <p className="text-xs text-muted-foreground">{desc}</p>
+      <p className="text-muted-foreground text-xs">{desc}</p>
     </div>
   );
 }

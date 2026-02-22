@@ -2,9 +2,47 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+const CREDIT_SPLIT = 0.9;
+const DEFAULT_CPM = 5.0;
+
+// Shared aggregation logic for stats queries
+function aggregate(
+  requests: Array<{
+    costUsd: number;
+    cached: boolean;
+    adId?: string;
+    fundedByCredits?: boolean;
+  }>,
+) {
+  const total = requests.length;
+  const totalCost = requests.reduce((s, r) => s + r.costUsd, 0);
+  const cached = requests.filter((r) => r.cached).length;
+  const cacheHitRate = total > 0 ? (cached / total) * 100 : 0;
+
+  const adImpressions = requests.filter((r) => r.adId).length;
+  const creditsEarned = (adImpressions / 1000) * DEFAULT_CPM * CREDIT_SPLIT;
+  const creditFunded = requests.filter((r) => r.fundedByCredits).length;
+  const totalSavings = requests
+    .filter((r) => r.fundedByCredits)
+    .reduce((s, r) => s + r.costUsd, 0);
+  const costOffset = totalCost > 0 ? (creditsEarned / totalCost) * 100 : 0;
+
+  return {
+    total,
+    totalCost,
+    cached,
+    cacheHitRate,
+    adImpressions,
+    creditsEarned,
+    creditFunded,
+    totalSavings,
+    costOffset,
+  };
+}
+
 export const getRecent = query({
   args: { limit: v.optional(v.number()) },
-  handler: async (ctx, { limit = 50 }) => {
+  handler: async (ctx, { limit = 10 }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return [];
     return ctx.db
@@ -29,25 +67,7 @@ export const getStats = query({
       )
       .collect();
 
-    const total = recent.length;
-    const totalCost = recent.reduce((s, r) => s + r.costUsd, 0);
-    const cached = recent.filter((r) => r.cached).length;
-    const cacheHitRate = total > 0 ? (cached / total) * 100 : 0;
-
-    const byModel: Record<string, number> = {};
-    for (const r of recent) {
-      byModel[r.model] = (byModel[r.model] ?? 0) + r.costUsd;
-    }
-
-    const adImpressions = recent.filter((r) => r.adId).length;
-    const creditsEarned = (adImpressions / 1000) * 5.0 * 0.9; // 90% of $5 avg CPM
-    const costOffset = totalCost > 0 ? (creditsEarned / totalCost) * 100 : 0;
-    const creditFunded = recent.filter((r) => r.fundedByCredits).length;
-    const totalSavings = recent
-      .filter((r) => r.fundedByCredits)
-      .reduce((s, r) => s + r.costUsd, 0);
-
-    return { total, totalCost, cached, cacheHitRate, byModel, adImpressions, creditsEarned, costOffset, creditFunded, totalSavings };
+    return aggregate(recent);
   },
 });
 
@@ -80,23 +100,7 @@ export const getHistoricalStats = query({
       )
       .collect();
 
-    const total = requests.length;
-    const totalCost = requests.reduce((s, r) => s + r.costUsd, 0);
-    const cached = requests.filter((r) => r.cached).length;
-    const cacheHitRate = total > 0 ? (cached / total) * 100 : 0;
-
-    const byModel: Record<string, number> = {};
-    for (const r of requests) {
-      byModel[r.model] = (byModel[r.model] ?? 0) + r.costUsd;
-    }
-
-    const adImpressions = requests.filter((r) => r.adId).length;
-    const creditsEarned = (adImpressions / 1000) * 5.0 * 0.9;
-    const creditFunded = requests.filter((r) => r.fundedByCredits).length;
-    const totalSavings = requests
-      .filter((r) => r.fundedByCredits)
-      .reduce((s, r) => s + r.costUsd, 0);
-    const costOffset = totalCost > 0 ? (creditsEarned / totalCost) * 100 : 0;
+    const stats = aggregate(requests);
 
     // Time-bucketed data for charts
     const bucketMs =
@@ -108,22 +112,31 @@ export const getHistoricalStats = query({
 
     const buckets: Record<
       number,
-      { requests: number; cost: number; creditsEarned: number; creditsSpent: number; savings: number }
+      {
+        requests: number;
+        cost: number;
+        creditsEarned: number;
+        savings: number;
+      }
     > = {};
 
     for (const r of requests) {
       const bucket = Math.floor(r.createdAt / bucketMs) * bucketMs;
       if (!buckets[bucket]) {
-        buckets[bucket] = { requests: 0, cost: 0, creditsEarned: 0, creditsSpent: 0, savings: 0 };
+        buckets[bucket] = {
+          requests: 0,
+          cost: 0,
+          creditsEarned: 0,
+          savings: 0,
+        };
       }
       buckets[bucket].requests++;
       buckets[bucket].cost += r.costUsd;
       if (r.fundedByCredits) {
-        buckets[bucket].creditsSpent += r.costUsd;
         buckets[bucket].savings += r.costUsd;
       }
       if (r.adId) {
-        buckets[bucket].creditsEarned += (5.0 * 0.9) / 1000;
+        buckets[bucket].creditsEarned += (DEFAULT_CPM * CREDIT_SPLIT) / 1000;
       }
     }
 
@@ -131,19 +144,7 @@ export const getHistoricalStats = query({
       .map(([ts, data]) => ({ timestamp: Number(ts), ...data }))
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    return {
-      total,
-      totalCost,
-      cached,
-      cacheHitRate,
-      byModel,
-      adImpressions,
-      creditsEarned,
-      creditFunded,
-      totalSavings,
-      costOffset,
-      timeSeries,
-    };
+    return { ...stats, timeSeries };
   },
 });
 
@@ -152,7 +153,6 @@ export const log = mutation({
   args: {
     userId: v.id("users"),
     model: v.string(),
-    requestedModel: v.optional(v.string()),
     promptTokens: v.number(),
     completionTokens: v.number(),
     costUsd: v.number(),

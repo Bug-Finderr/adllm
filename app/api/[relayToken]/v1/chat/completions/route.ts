@@ -1,15 +1,18 @@
-import { fetchMutation, fetchQuery } from "convex/nextjs";
-import { api } from "@/convex/_generated/api";
-import { decrypt } from "@/lib/encryption";
-import { classifyAndRoute, MODEL_PROVIDER_MAP } from "@/lib/routing";
-import { pickAd, formatAdMarkdown, type Ad } from "@/lib/ads";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { streamText } from "ai";
+import { type LanguageModel, streamText } from "ai";
+import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { PostHog } from "posthog-node";
+import { api } from "@/convex/_generated/api";
+import { type Ad, formatAdMarkdown, pickAd } from "@/lib/ads";
+import { decrypt } from "@/lib/encryption";
+import { classifyAndRoute, MODEL_PROVIDER_MAP } from "@/lib/routing";
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type CoreMessage = any;
+
+const CREDIT_SPLIT = 0.9;
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -45,7 +48,10 @@ function computeHash(text: string): string {
 
 function extractUserText(messages: Message[]): string {
   const userMessages = messages.filter((m) => m.role === "user");
-  return userMessages.map((m) => m.content).join(" ").trim();
+  return userMessages
+    .map((m) => m.content)
+    .join(" ")
+    .trim();
 }
 
 // Cost per 1M tokens (input + output average)
@@ -83,54 +89,48 @@ export async function POST(
   // 1. Look up user by relay token
   const settings = await fetchQuery(api.settings.getByToken, { relayToken });
   if (!settings) {
-    return new Response(
-      JSON.stringify({ error: "Invalid relay token" }),
-      { status: 401, headers: { "Content-Type": "application/json" } },
-    );
+    return new Response(JSON.stringify({ error: "Invalid relay token" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const userId = settings.userId;
+  const ph = getPostHog();
 
   // Track the incoming request server-side
-  const posthog = getPostHog();
-  posthog.capture({
+  ph.capture({
     distinctId: userId,
     event: "chat_completion_requested",
     properties: { relay_token_prefix: relayToken.slice(0, 6) },
   });
-  posthog.shutdown().catch(() => {});
 
-  // 1a. Pick ad if enabled — fetch from DB, apply A/B format via PostHog
+  // 1a. Pick ad if enabled
   let ad: Ad | null = null;
   if (settings.adsEnabled !== false) {
     const activeAds = await fetchQuery(api.ads.listActive, {});
-    const picked = pickAd(activeAds as Ad[]);
-    if (picked) {
-      // Use PostHog feature flag to override ad format for A/B test
-      const phFlag = getPostHog();
-      const adFormatVariant = await phFlag.getFeatureFlag("ad-format-test", userId);
-      phFlag.shutdown().catch(() => {});
-      if (adFormatVariant === "badge" || adFormatVariant === "text") {
-        picked.format = adFormatVariant;
-      }
-    }
-    ad = picked;
+    ad = pickAd(activeAds as Ad[]);
   }
 
   // 1b. Load which providers the user has API keys for + check credit balance
-  const availableProviders = await fetchQuery(api.apiKeys.getAvailableProviders, { userId });
+  const availableProviders = await fetchQuery(
+    api.apiKeys.getAvailableProviders,
+    { userId },
+  );
   const creditBalance = await fetchQuery(api.credits.checkBalance, { userId });
 
   if (availableProviders.length === 0 && creditBalance <= 0) {
-    const phNoKeys = getPostHog();
-    phNoKeys.capture({
+    ph.capture({
       distinctId: userId,
       event: "no_api_keys_error",
       properties: { credit_balance: creditBalance },
     });
-    phNoKeys.shutdown().catch(() => {});
+    ph.shutdown().catch(() => {});
     return new Response(
-      JSON.stringify({ error: "No API keys configured and no credits available. Add a key or enable ads to earn credits." }),
+      JSON.stringify({
+        error:
+          "No API keys configured and no credits available. Add a key or enable ads to earn credits.",
+      }),
       { status: 402, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -177,12 +177,12 @@ export async function POST(
   // 3. Context injection — prepend user's system prompt
   let processedMessages = [...messages];
   if (settings.systemPromptAddition?.trim()) {
-    const addition = `[Relay Context]\n${settings.systemPromptAddition.trim()}\n`;
+    const addition = `[adllm Context]\n${settings.systemPromptAddition.trim()}\n`;
     const existingSystem = processedMessages.find((m) => m.role === "system");
     if (existingSystem) {
       processedMessages = processedMessages.map((m) =>
         m.role === "system"
-          ? { ...m, content: addition + "\n" + m.content }
+          ? { ...m, content: `${addition}\n${m.content}` }
           : m,
       );
     } else {
@@ -208,7 +208,11 @@ export async function POST(
   } else if (settings.routingEnabled && geminiKey) {
     // Smart routing — only routes to providers the user has keys for
     const userText = extractUserText(messages);
-    const decision = await classifyAndRoute(userText, geminiKey, routingProviders);
+    const decision = await classifyAndRoute(
+      userText,
+      geminiKey,
+      routingProviders,
+    );
     provider = decision.provider;
     actualModel = decision.model;
     complexity = decision.complexity;
@@ -241,7 +245,6 @@ export async function POST(
       fetchMutation(api.requests.log, {
         userId,
         model: cached.model,
-        requestedModel,
         promptTokens: 0,
         completionTokens: 0,
         costUsd: 0,
@@ -261,13 +264,12 @@ export async function POST(
       }
 
       // Track cache hit
-      const phCache = getPostHog();
-      phCache.capture({
+      ph.capture({
         distinctId: userId,
         event: "chat_completion_cache_hit",
         properties: { model: cached.model, latency_ms: latencyMs },
       });
-      phCache.shutdown().catch(() => {});
+      ph.shutdown().catch(() => {});
 
       // Stream cached response as SSE
       const cachedText = cached.responseText;
@@ -286,7 +288,9 @@ export async function POST(
           }
           if (ad) {
             controller.enqueue(
-              encoder.encode(`data: ${makeOpenAIChunk(formatAdMarkdown(ad), cached.model)}\n\n`),
+              encoder.encode(
+                `data: ${makeOpenAIChunk(formatAdMarkdown(ad), cached.model)}\n\n`,
+              ),
             );
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -311,7 +315,7 @@ export async function POST(
   const poolKey = process.env[POOL_KEY_MAP[provider] ?? ""];
 
   if (poolKey && creditBalance > 0) {
-    // Pool key available and user has credits — use Relay inference
+    // Pool key available and user has credits — use adllm inference
     apiKey = poolKey;
     usedPoolKey = true;
   } else {
@@ -321,23 +325,30 @@ export async function POST(
       { userId, provider },
     );
     if (encryptedKeyData) {
-      apiKey = await decrypt(encryptedKeyData.encryptedKey, encryptedKeyData.iv);
+      apiKey = await decrypt(
+        encryptedKeyData.encryptedKey,
+        encryptedKeyData.iv,
+      );
     } else if (poolKey) {
       // Pool key exists but no credits and no user key
-      const phInsufficient = getPostHog();
-      phInsufficient.capture({
+      ph.capture({
         distinctId: userId,
         event: "insufficient_credits_error",
         properties: { provider },
       });
-      phInsufficient.shutdown().catch(() => {});
+      ph.shutdown().catch(() => {});
       return new Response(
-        JSON.stringify({ error: "Insufficient credits. Enable ads to earn credits for API usage." }),
+        JSON.stringify({
+          error:
+            "Insufficient credits. Enable ads to earn credits for API usage.",
+        }),
         { status: 402, headers: { "Content-Type": "application/json" } },
       );
     } else {
       return new Response(
-        JSON.stringify({ error: `No API key for ${provider} and no pool key available.` }),
+        JSON.stringify({
+          error: `No API key for ${provider} and no pool key available.`,
+        }),
         { status: 400, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -354,7 +365,10 @@ export async function POST(
         { userId, provider },
       );
       if (encryptedKeyData) {
-        apiKey = await decrypt(encryptedKeyData.encryptedKey, encryptedKeyData.iv);
+        apiKey = await decrypt(
+          encryptedKeyData.encryptedKey,
+          encryptedKeyData.iv,
+        );
         usedPoolKey = false;
       }
       // If no user key, proceed with pool key anyway (best-effort)
@@ -362,7 +376,7 @@ export async function POST(
   }
 
   // 7. Stream response from provider
-  let llmModel;
+  let llmModel: LanguageModel;
   if (provider === "anthropic") {
     const anthropic = createAnthropic({ apiKey });
     llmModel = anthropic(actualModel);
@@ -398,7 +412,9 @@ export async function POST(
           }
           if (ad) {
             controller.enqueue(
-              encoder.encode(`data: ${makeOpenAIChunk(formatAdMarkdown(ad), actualModel)}\n\n`),
+              encoder.encode(
+                `data: ${makeOpenAIChunk(formatAdMarkdown(ad), actualModel)}\n\n`,
+              ),
             );
           }
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
@@ -406,16 +422,20 @@ export async function POST(
           // Get token usage (AI SDK v6: inputTokens/outputTokens)
           const usage = await result.usage;
           promptTokens = (usage as { inputTokens?: number })?.inputTokens ?? 0;
-          completionTokens = (usage as { outputTokens?: number })?.outputTokens ?? 0;
+          completionTokens =
+            (usage as { outputTokens?: number })?.outputTokens ?? 0;
 
           const latencyMs = Date.now() - start;
-          const costUsd = estimateCost(actualModel, promptTokens + completionTokens);
+          const costUsd = estimateCost(
+            actualModel,
+            promptTokens + completionTokens,
+          );
 
           // Log to Convex (fire and forget)
           fetchMutation(api.requests.log, {
             userId,
             model: actualModel,
-            requestedModel,
+
             promptTokens,
             completionTokens,
             costUsd,
@@ -442,8 +462,7 @@ export async function POST(
           }
 
           // Track successful completion
-          const phSuccess = getPostHog();
-          phSuccess.capture({
+          ph.capture({
             distinctId: userId,
             event: "chat_completion_succeeded",
             properties: {
@@ -458,34 +477,38 @@ export async function POST(
             },
           });
           if (usedPoolKey) {
-            phSuccess.capture({
+            ph.capture({
               distinctId: userId,
               event: "relay_pool_key_used",
-              properties: { provider, model: actualModel, credit_balance: creditBalance },
+              properties: {
+                provider,
+                model: actualModel,
+                credit_balance: creditBalance,
+              },
             });
-            phSuccess.capture({
+            ph.capture({
               distinctId: userId,
               event: "credits_spent",
               properties: { amount: costUsd, provider, model: actualModel },
             });
           }
           if (ad) {
-            phSuccess.capture({
+            ph.capture({
               distinctId: userId,
               event: "credits_earned",
-              properties: { amount: (ad.cpm * 0.9) / 1000, ad_sponsor: ad.sponsor, ad_format: ad.format ?? "text" },
+              properties: {
+                amount: (ad.cpm * CREDIT_SPLIT) / 1000,
+                ad_sponsor: ad.sponsor,
+              },
             });
           }
-          phSuccess.shutdown().catch(() => {});
+          ph.shutdown().catch(() => {});
 
           // Store in cache (fire and forget)
           if (settings.cacheEnabled && fullResponse) {
-            // We skip embedding for now (no async in stream close)
-            // Exact hash match is still useful
             fetchMutation(api.cacheStore.store, {
               userId,
               promptHash,
-              embedding: [], // populated async in future
               responseText: fullResponse,
               model: actualModel,
             }).catch(console.error);
@@ -497,7 +520,7 @@ export async function POST(
           fetchMutation(api.requests.log, {
             userId,
             model: actualModel,
-            requestedModel,
+
             promptTokens: 0,
             completionTokens: 0,
             costUsd: 0,
@@ -507,8 +530,7 @@ export async function POST(
           }).catch(console.error);
 
           // Track failure
-          const phFail = getPostHog();
-          phFail.capture({
+          ph.capture({
             distinctId: userId,
             event: "chat_completion_failed",
             properties: {
@@ -518,7 +540,7 @@ export async function POST(
               error: String(err),
             },
           });
-          phFail.shutdown().catch(() => {});
+          ph.shutdown().catch(() => {});
 
           controller.error(err);
         }
@@ -539,7 +561,6 @@ export async function POST(
     fetchMutation(api.requests.log, {
       userId,
       model: actualModel,
-      requestedModel,
       promptTokens: 0,
       completionTokens: 0,
       costUsd: 0,
@@ -549,8 +570,7 @@ export async function POST(
     }).catch(console.error);
 
     // Track outer failure
-    const phOuterFail = getPostHog();
-    phOuterFail.capture({
+    ph.capture({
       distinctId: userId,
       event: "chat_completion_failed",
       properties: {
@@ -560,7 +580,7 @@ export async function POST(
         error: String(err),
       },
     });
-    phOuterFail.shutdown().catch(() => {});
+    ph.shutdown().catch(() => {});
 
     return new Response(
       JSON.stringify({ error: "Provider error", details: String(err) }),
@@ -576,8 +596,7 @@ export async function OPTIONS() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers":
-        "Content-Type, Authorization, X-API-Key",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
     },
   });
 }

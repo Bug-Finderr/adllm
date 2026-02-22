@@ -1,9 +1,9 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
 import { WalletIcon } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { api } from "@/convex/_generated/api";
 
 export function CreditBalanceCard() {
   const balance = useQuery(api.credits.getBalance);
@@ -18,22 +18,22 @@ export function CreditBalanceCard() {
           <WalletIcon className="h-6 w-6" />
         </div>
         <div className="flex-1">
-          <p className="text-xs text-muted-foreground">Credit Balance</p>
-          <p className="text-2xl font-bold">${balance.toFixed(4)}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-muted-foreground text-xs">Credit Balance</p>
+          <p className="font-bold text-2xl">${balance.toFixed(4)}</p>
+          <p className="text-muted-foreground text-xs">
             {stats?.adImpressions ?? 0} ad impressions earned you ~$
             {(stats?.creditsEarned ?? 0).toFixed(4)} today
             {(stats?.totalSavings ?? 0) > 0
-              ? ` · You saved $${stats!.totalSavings.toFixed(4)} using Relay inference`
+              ? ` · You saved $${stats!.totalSavings.toFixed(4)} using AdLLM inference`
               : stats?.creditFunded
                 ? ` · ${stats.creditFunded} requests funded by credits`
                 : ""}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs text-muted-foreground">Powered by</p>
-          <p className="text-sm font-medium">Sponsored ads</p>
-          <p className="text-xs text-muted-foreground">Free API usage</p>
+          <p className="text-muted-foreground text-xs">Powered by</p>
+          <p className="font-medium text-sm">Sponsored ads</p>
+          <p className="text-muted-foreground text-xs">Free API usage</p>
         </div>
       </CardContent>
     </Card>

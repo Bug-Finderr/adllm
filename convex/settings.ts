@@ -54,11 +54,7 @@ export const update = mutation({
     adsEnabled: v.optional(v.boolean()),
     systemPromptAddition: v.optional(v.string()),
     preferredProvider: v.optional(
-      v.union(
-        v.literal("anthropic"),
-        v.literal("openai"),
-        v.literal("google"),
-      ),
+      v.union(v.literal("anthropic"), v.literal("openai"), v.literal("google")),
     ),
   },
   handler: async (ctx, args) => {

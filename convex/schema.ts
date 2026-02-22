@@ -24,19 +24,14 @@ export default defineSchema({
   // Every proxy request logged here
   requests: defineTable({
     userId: v.id("users"),
-    model: v.string(), // actual model used
-    requestedModel: v.optional(v.string()), // what IDE asked for
+    model: v.string(),
     promptTokens: v.number(),
     completionTokens: v.number(),
     costUsd: v.number(),
     cached: v.boolean(),
     latencyMs: v.number(),
     complexity: v.optional(
-      v.union(
-        v.literal("simple"),
-        v.literal("medium"),
-        v.literal("complex"),
-      ),
+      v.union(v.literal("simple"), v.literal("medium"), v.literal("complex")),
     ),
     error: v.optional(v.string()),
     adId: v.optional(v.string()),
@@ -44,22 +39,14 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_userId_time", ["userId", "createdAt"]),
 
-  // Semantic cache with vector embeddings
+  // Prompt cache (exact hash match)
   cache: defineTable({
     userId: v.id("users"),
-    promptHash: v.string(), // SHA-256 for exact dedup
-    embedding: v.array(v.float64()), // 1536 dims (text-embedding-3-small)
+    promptHash: v.string(),
     responseText: v.string(),
     model: v.string(),
     createdAt: v.number(),
-  })
-    .index("by_userId", ["userId"])
-    .index("by_hash", ["promptHash"])
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 1536,
-      filterFields: ["userId"],
-    }),
+  }).index("by_hash", ["promptHash"]),
 
   // Sponsored ads
   ads: defineTable({
@@ -68,9 +55,6 @@ export default defineSchema({
     url: v.string(),
     cpm: v.number(), // revenue per 1000 impressions (USD)
     active: v.boolean(),
-    format: v.optional(v.union(v.literal("badge"), v.literal("text"))), // A/B: badge (shields.io) vs text-only
-    logoSlug: v.optional(v.string()), // Simple Icons slug for shields.io badge (e.g. "vercel", "supabase")
-    badgeColor: v.optional(v.string()), // hex color for badge background (e.g. "000", "3ECF8E")
   }),
 
   // User routing + injection settings

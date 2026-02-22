@@ -1,15 +1,15 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { api } from "@/convex/_generated/api";
 import { useMutation, useQuery } from "convex/react";
 import { CheckIcon, CopyIcon, RefreshCwIcon, ZapIcon } from "lucide-react";
 import posthog from "posthog-js";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { api } from "@/convex/_generated/api";
 
 export function ProxyUrlCard() {
   const settings = useQuery(api.settings.get);
@@ -30,7 +30,7 @@ export function ProxyUrlCard() {
 
   async function handleRegenerate() {
     await regenerate();
-    toast.success("Relay token regenerated. Update your IDE.");
+    toast.success("Token regenerated. Update your IDE.");
     posthog.capture("relay_token_regenerated");
   }
 
@@ -49,7 +49,12 @@ export function ProxyUrlCard() {
             value={settings ? baseUrl : "Loading..."}
             className="font-mono text-xs"
           />
-          <Button size="sm" variant="outline" onClick={copyUrl} disabled={!settings}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={copyUrl}
+            disabled={!settings}
+          >
             {copied ? (
               <CheckIcon className="h-4 w-4 text-green-500" />
             ) : (
@@ -58,22 +63,23 @@ export function ProxyUrlCard() {
           </Button>
         </div>
 
-        <div className="rounded-md bg-muted p-3 text-xs space-y-1">
+        <div className="space-y-1 rounded-md bg-muted p-3 text-xs">
           <p className="font-medium">Setup Instructions:</p>
           <p className="text-muted-foreground">
-            <span className="font-mono text-foreground">Cursor</span> → Settings → Models → OpenAI
-            → Override Base URL → paste above
+            <span className="font-mono text-foreground">Cursor</span> → Settings
+            → Models → OpenAI → Override Base URL → paste above
           </p>
           <p className="text-muted-foreground">
-            <span className="font-mono text-foreground">VS Code</span> → Chat: Manage Language
-            Models → OpenAI Compatible → paste above
+            <span className="font-mono text-foreground">VS Code</span> → Chat:
+            Manage Language Models → OpenAI Compatible → paste above
           </p>
           <p className="text-muted-foreground">
-            <span className="font-mono text-foreground">Continue.dev</span> → config.yaml →{" "}
-            <code>apiBase: [paste above]</code>
+            <span className="font-mono text-foreground">Continue.dev</span> →
+            config.yaml → <code>apiBase: [paste above]</code>
           </p>
-          <p className="text-muted-foreground mt-1">
-            Set API key to <code className="text-foreground">relay</code> (any value works)
+          <p className="mt-1 text-muted-foreground">
+            Set API key to <code className="text-foreground">relay</code> (any
+            value works)
           </p>
         </div>
 
@@ -85,7 +91,7 @@ export function ProxyUrlCard() {
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 gap-1 text-xs text-muted-foreground"
+            className="h-7 gap-1 text-muted-foreground text-xs"
             onClick={handleRegenerate}
           >
             <RefreshCwIcon className="h-3 w-3" />

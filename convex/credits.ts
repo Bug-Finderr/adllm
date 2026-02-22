@@ -28,7 +28,9 @@ export const checkBalance = query({
   },
 });
 
-// Earn credits from an ad impression: 90% of CPM / 1000
+const CREDIT_SPLIT = 0.9;
+
+// Earn credits from an ad impression
 export const earnFromAd = mutation({
   args: {
     userId: v.id("users"),
@@ -41,7 +43,7 @@ export const earnFromAd = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (!settings) return 0;
-    const earned = (cpm * 0.9) / 1000;
+    const earned = (cpm * CREDIT_SPLIT) / 1000;
     await ctx.db.patch(settings._id, {
       credits: (settings.credits ?? 0) + earned,
     });
@@ -49,7 +51,7 @@ export const earnFromAd = mutation({
   },
 });
 
-// Spend credits when using Relay pool key
+// Spend credits when using adllm pool key
 export const spend = mutation({
   args: {
     userId: v.id("users"),

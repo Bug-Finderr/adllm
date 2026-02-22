@@ -1,6 +1,8 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
 import posthog from "posthog-js";
+import { toast } from "sonner";
 import { ApiKeyForm } from "@/components/api-key-form";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,8 +24,6 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
-import { toast } from "sonner";
 
 type Provider = "anthropic" | "openai" | "google";
 
@@ -33,19 +33,59 @@ const ROUTING_PREFERENCES: Record<
   Array<{ provider: Provider; model: string; display: string; cost: string }>
 > = {
   simple: [
-    { provider: "google", model: "gemini-2.0-flash", display: "Gemini Flash", cost: "$0.075" },
-    { provider: "openai", model: "gpt-4o-mini", display: "GPT-4o Mini", cost: "$0.15" },
-    { provider: "anthropic", model: "claude-haiku-4-5", display: "Claude Haiku", cost: "$0.80" },
+    {
+      provider: "google",
+      model: "gemini-2.0-flash",
+      display: "Gemini Flash",
+      cost: "$0.075",
+    },
+    {
+      provider: "openai",
+      model: "gpt-4o-mini",
+      display: "GPT-4o Mini",
+      cost: "$0.15",
+    },
+    {
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+      display: "Claude Haiku",
+      cost: "$0.80",
+    },
   ],
   medium: [
-    { provider: "openai", model: "gpt-4o-mini", display: "GPT-4o Mini", cost: "$0.15" },
-    { provider: "google", model: "gemini-2.0-flash", display: "Gemini Flash", cost: "$0.075" },
-    { provider: "anthropic", model: "claude-haiku-4-5", display: "Claude Haiku", cost: "$0.80" },
+    {
+      provider: "openai",
+      model: "gpt-4o-mini",
+      display: "GPT-4o Mini",
+      cost: "$0.15",
+    },
+    {
+      provider: "google",
+      model: "gemini-2.0-flash",
+      display: "Gemini Flash",
+      cost: "$0.075",
+    },
+    {
+      provider: "anthropic",
+      model: "claude-haiku-4-5",
+      display: "Claude Haiku",
+      cost: "$0.80",
+    },
   ],
   complex: [
-    { provider: "anthropic", model: "claude-sonnet-4-5", display: "Claude Sonnet", cost: "$3.00" },
+    {
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      display: "Claude Sonnet",
+      cost: "$3.00",
+    },
     { provider: "openai", model: "gpt-4o", display: "GPT-4o", cost: "$2.50" },
-    { provider: "google", model: "gemini-2.0-flash", display: "Gemini Flash", cost: "$0.075" },
+    {
+      provider: "google",
+      model: "gemini-2.0-flash",
+      display: "Gemini Flash",
+      cost: "$0.075",
+    },
   ],
 };
 
@@ -103,11 +143,11 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-4 md:p-6 max-w-2xl">
+    <div className="flex max-w-2xl flex-col gap-4 p-4 md:p-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Configure your Relay proxy
+        <h1 className="font-bold text-2xl tracking-tight">Settings</h1>
+        <p className="text-muted-foreground text-sm">
+          Configure your AdLLM proxy
         </p>
       </div>
 
@@ -125,7 +165,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <Label>Enable smart routing</Label>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Uses Gemini Flash to classify prompts
               </p>
             </div>
@@ -137,7 +177,7 @@ export default function SettingsPage() {
 
           <Separator />
 
-          <div className="rounded-md border text-xs overflow-hidden">
+          <div className="overflow-hidden rounded-md border text-xs">
             <div className="grid grid-cols-3 bg-muted px-3 py-2 font-medium">
               <span>Complexity</span>
               <span>Model</span>
@@ -150,7 +190,7 @@ export default function SettingsPage() {
                   !row.available ? "opacity-40" : ""
                 }`}
               >
-                <span className="capitalize text-muted-foreground">
+                <span className="text-muted-foreground capitalize">
                   {row.tier}
                 </span>
                 <span>
@@ -165,7 +205,7 @@ export default function SettingsPage() {
           </div>
 
           {configuredProviders.length === 0 && (
-            <p className="text-xs text-amber-500">
+            <p className="text-amber-500 text-xs">
               Add at least one API key above for routing to work.
             </p>
           )}
@@ -236,8 +276,8 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <div>
               <Label>Enable semantic cache</Label>
-              <p className="text-xs text-muted-foreground">
-                Exact matches always cached; similar matches via vector search
+              <p className="text-muted-foreground text-xs">
+                Identical prompts return cached responses instantly
               </p>
             </div>
             <Switch
@@ -252,15 +292,15 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle className="text-base">Sponsored Ads</CardTitle>
           <CardDescription>
-            Show a small sponsored message at the end of each AI response.
-            Earn free credits for API usage.
+            Show a small sponsored message at the end of each AI response. Earn
+            free credits for API usage.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
               <Label>Enable ad injection</Label>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Appends a sponsor card to each response in your IDE
               </p>
             </div>

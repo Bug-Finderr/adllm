@@ -1,9 +1,15 @@
 "use client";
 
+import { useQuery } from "convex/react";
+import {
+  ActivityIcon,
+  DatabaseIcon,
+  DollarSignIcon,
+  MegaphoneIcon,
+  PiggyBankIcon,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/convex/_generated/api";
-import { useQuery } from "convex/react";
-import { ActivityIcon, DollarSignIcon, PiggyBankIcon, DatabaseIcon, MegaphoneIcon } from "lucide-react";
 
 function StatCard({
   label,
@@ -21,9 +27,9 @@ function StatCard({
       <CardContent className="flex items-center gap-3 py-4">
         <div className="rounded-md bg-primary/10 p-2 text-primary">{icon}</div>
         <div>
-          <p className="text-xs text-muted-foreground">{label}</p>
-          <p className="text-xl font-bold">{value}</p>
-          {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+          <p className="text-muted-foreground text-xs">{label}</p>
+          <p className="font-bold text-xl">{value}</p>
+          {sub && <p className="text-muted-foreground text-xs">{sub}</p>}
         </div>
       </CardContent>
     </Card>
@@ -69,7 +75,7 @@ export function StatsBar() {
         label="You Saved (24h)"
         value={`$${(stats.totalSavings ?? 0).toFixed(4)}`}
         icon={<PiggyBankIcon className="h-4 w-4" />}
-        sub={`${stats.creditFunded ?? 0} requests on Relay inference`}
+        sub={`${stats.creditFunded ?? 0} requests on AdLLM inference`}
       />
       <StatCard
         label="Credits Earned (24h)"

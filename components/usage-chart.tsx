@@ -1,21 +1,21 @@
 "use client";
 
-import { api } from "@/convex/_generated/api";
 import { useQuery } from "convex/react";
-import { useState } from "react";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
 import { format } from "date-fns";
 import { TrendingUpIcon } from "lucide-react";
+import { useState } from "react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { api } from "@/convex/_generated/api";
 
 type Range = "24h" | "7d" | "30d" | "all";
 
@@ -44,7 +44,7 @@ export function UsageChart() {
           <RangeToggle range={range} setRange={setRange} />
         </CardHeader>
         <CardContent>
-          <div className="flex h-[280px] items-center justify-center text-sm text-muted-foreground">
+          <div className="flex h-[280px] items-center justify-center text-muted-foreground text-sm">
             No data for this time range yet. Make some requests!
           </div>
         </CardContent>
@@ -71,23 +71,29 @@ export function UsageChart() {
         <div className="mb-4 grid grid-cols-5 gap-4 text-center text-xs">
           <div>
             <p className="text-muted-foreground">Requests</p>
-            <p className="text-lg font-bold">{stats.total}</p>
+            <p className="font-bold text-lg">{stats.total}</p>
           </div>
           <div>
             <p className="text-muted-foreground">Total Cost</p>
-            <p className="text-lg font-bold">${stats.totalCost.toFixed(4)}</p>
+            <p className="font-bold text-lg">${stats.totalCost.toFixed(4)}</p>
           </div>
           <div>
             <p className="text-muted-foreground">You Saved</p>
-            <p className="text-lg font-bold text-emerald-600">${(stats.totalSavings ?? 0).toFixed(4)}</p>
+            <p className="font-bold text-emerald-600 text-lg">
+              ${(stats.totalSavings ?? 0).toFixed(4)}
+            </p>
           </div>
           <div>
             <p className="text-muted-foreground">Credits Earned</p>
-            <p className="text-lg font-bold text-green-600">${stats.creditsEarned.toFixed(4)}</p>
+            <p className="font-bold text-green-600 text-lg">
+              ${stats.creditsEarned.toFixed(4)}
+            </p>
           </div>
           <div>
             <p className="text-muted-foreground">Credit-Funded</p>
-            <p className="text-lg font-bold text-purple-600">{stats.creditFunded}</p>
+            <p className="font-bold text-lg text-purple-600">
+              {stats.creditFunded}
+            </p>
           </div>
         </div>
         <ResponsiveContainer width="100%" height={240}>
@@ -104,7 +110,11 @@ export function UsageChart() {
               labelFormatter={(label) => formatTimestamp(Number(label))}
               formatter={(value, name) => [
                 `$${Number(value).toFixed(6)}`,
-                name === "cost" ? "Cost" : name === "savings" ? "You Saved" : "Credits Earned",
+                name === "cost"
+                  ? "Cost"
+                  : name === "savings"
+                    ? "You Saved"
+                    : "Credits Earned",
               ]}
             />
             <Area
@@ -152,16 +162,16 @@ function RangeToggle({
       onValueChange={(v) => v && setRange(v as Range)}
       size="sm"
     >
-      <ToggleGroupItem value="24h" className="text-xs px-2">
+      <ToggleGroupItem value="24h" className="px-2 text-xs">
         24h
       </ToggleGroupItem>
-      <ToggleGroupItem value="7d" className="text-xs px-2">
+      <ToggleGroupItem value="7d" className="px-2 text-xs">
         7d
       </ToggleGroupItem>
-      <ToggleGroupItem value="30d" className="text-xs px-2">
+      <ToggleGroupItem value="30d" className="px-2 text-xs">
         30d
       </ToggleGroupItem>
-      <ToggleGroupItem value="all" className="text-xs px-2">
+      <ToggleGroupItem value="all" className="px-2 text-xs">
         All
       </ToggleGroupItem>
     </ToggleGroup>

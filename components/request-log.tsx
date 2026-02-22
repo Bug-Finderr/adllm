@@ -1,5 +1,7 @@
 "use client";
 
+import { useQuery } from "convex/react";
+import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -11,8 +13,6 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
-import { useQuery } from "convex/react";
-import { formatDistanceToNow } from "date-fns";
 
 function formatCost(usd: number): string {
   if (usd === 0) return "$0.00";
@@ -21,18 +21,21 @@ function formatCost(usd: number): string {
 }
 
 function modelColor(model: string): string {
-  if (model.includes("claude")) return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
-  if (model.includes("gpt")) return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-  if (model.includes("gemini")) return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
+  if (model.includes("claude"))
+    return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
+  if (model.includes("gpt"))
+    return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
+  if (model.includes("gemini"))
+    return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
   return "";
 }
 
 export function RequestLog() {
-  const requests = useQuery(api.requests.getRecent, { limit: 50 });
+  const requests = useQuery(api.requests.getRecent, { limit: 10 });
 
   if (!requests) {
     return (
-      <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+      <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
         Loading...
       </div>
     );
@@ -41,8 +44,8 @@ export function RequestLog() {
   if (requests.length === 0) {
     return (
       <div className="flex h-40 flex-col items-center justify-center gap-2 text-center">
-        <p className="text-sm font-medium">No requests yet</p>
-        <p className="text-xs text-muted-foreground">
+        <p className="font-medium text-sm">No requests yet</p>
+        <p className="text-muted-foreground text-xs">
           Configure your IDE with the proxy URL above and make a request.
         </p>
       </div>
@@ -70,12 +73,12 @@ export function RequestLog() {
               key={r._id}
               className={r.cached ? "bg-green-50/50 dark:bg-green-950/20" : ""}
             >
-              <TableCell className="text-xs text-muted-foreground">
+              <TableCell className="text-muted-foreground text-xs">
                 {formatDistanceToNow(r.createdAt, { addSuffix: true })}
               </TableCell>
               <TableCell>
                 <span
-                  className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${modelColor(r.model)}`}
+                  className={`inline-flex items-center rounded px-1.5 py-0.5 font-medium text-xs ${modelColor(r.model)}`}
                 >
                   {r.model}
                 </span>
@@ -95,7 +98,7 @@ export function RequestLog() {
                     {r.complexity}
                   </Badge>
                 ) : (
-                  <span className="text-xs text-muted-foreground">—</span>
+                  <span className="text-muted-foreground text-xs">—</span>
                 )}
               </TableCell>
               <TableCell className="text-right text-xs">
@@ -105,16 +108,18 @@ export function RequestLog() {
                   `${r.promptTokens + r.completionTokens}`
                 )}
               </TableCell>
-              <TableCell className="text-right text-xs font-mono">
+              <TableCell className="text-right font-mono text-xs">
                 {r.error ? (
                   <span className="text-red-500">error</span>
                 ) : (
-                  <span className={r.cached ? "font-medium text-green-600" : ""}>
+                  <span
+                    className={r.cached ? "font-medium text-green-600" : ""}
+                  >
                     {formatCost(r.costUsd)}
                   </span>
                 )}
               </TableCell>
-              <TableCell className="text-right text-xs text-muted-foreground">
+              <TableCell className="text-right text-muted-foreground text-xs">
                 {r.latencyMs}ms
               </TableCell>
               <TableCell className="text-xs">
@@ -123,7 +128,9 @@ export function RequestLog() {
                     <Badge className="bg-purple-100 text-purple-700 text-xs hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400">
                       credits
                     </Badge>
-                    <span className="text-emerald-600 font-medium">saved {formatCost(r.costUsd)}</span>
+                    <span className="font-medium text-emerald-600">
+                      saved {formatCost(r.costUsd)}
+                    </span>
                   </span>
                 ) : (
                   <span className="text-muted-foreground">own key</span>

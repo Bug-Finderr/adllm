@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { ThemeProvider } from "next-themes";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { Toaster } from "sonner";
@@ -16,9 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Relay — BYOK AI Proxy",
+  title: "adllm — Ad-Funded AI Proxy",
   description:
-    "One endpoint, all your models. Bring your own API keys, get smart routing, semantic caching, and a real-time dashboard.",
+    "Your AI coding costs, subsidized by ads. Bring your own keys, get smart routing, caching, and credits from sponsored content.",
   icons: { icon: "/favicon.ico" },
 };
 
@@ -30,7 +30,9 @@ export default function RootLayout({
   return (
     <ConvexAuthNextjsServerProvider>
       <html lang="en" suppressHydrationWarning>
-        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        >
           <ThemeProvider attribute="class" defaultTheme="dark">
             {children}
             <Toaster richColors />

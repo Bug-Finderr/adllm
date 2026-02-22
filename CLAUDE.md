@@ -9,7 +9,7 @@ bun dev                    # Start both Next.js + Convex dev servers (via mprocs
 bun run dev:frontend       # Next.js only (with --turbopack)
 bun run dev:convex         # Convex only (bunx convex dev)
 bun run build              # Next.js production build
-bun run lint               # ESLint
+bun run lint               # Biome check + autofix
 bunx convex deploy         # Deploy Convex functions to production
 bunx convex run ads:seed   # Seed default ads into database
 ```
@@ -50,7 +50,7 @@ All backend logic lives in `convex/`. Key modules:
 - `apiKeys.ts` — Encrypted API key CRUD (AES-GCM, encrypted client-side before storage)
 - `requests.ts` — Request logging + `getStats` / `getHistoricalStats` (time-bucketed analytics)
 - `credits.ts` — Credit balance, earnFromAd (applies hidden 90% factor), spend
-- `cacheStore.ts` — Hash-based exact cache lookup (vector index defined but not yet used for similarity)
+- `cacheStore.ts` — Hash-based exact cache lookup
 - `ads.ts` — Sponsored ad CRUD + seed
 
 **Convex from Edge Runtime**: The proxy route can't use Convex hooks — it uses `fetchQuery` and `fetchMutation` from `convex/nextjs` for direct server-side calls. Mutations after response (logging, credit ops) are fire-and-forget with `.catch(console.error)`.
@@ -65,23 +65,23 @@ AES-GCM 256-bit. Key derived from `NEXT_PUBLIC_ENCRYPTION_KEY` (64-char hex). En
 
 ### Pool Key Priority (Credit System)
 
-When a user has credits > 0, the proxy **prefers Relay's pool keys** (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) over the user's own keys. This maximizes visible savings ("You saved $X"). A cost pre-check estimates whether credits cover the request; if not, it silently falls back to the user's own key. Cost is deducted from the user's credit balance after streaming. If no pool key and no user key and no credits → 402.
+When a user has credits > 0, the proxy **prefers adllm's pool keys** (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) over the user's own keys. This maximizes visible savings ("You saved $X"). A cost pre-check estimates whether credits cover the request; if not, it silently falls back to the user's own key. Cost is deducted from the user's credit balance after streaming. If no pool key and no user key and no credits → 402.
 
 ## Ad-Funded Credits (INTERNAL — never expose to users)
 
 - Ads are injected into chat responses as SSE chunks before `data: [DONE]`.
-- **The 90/10 revenue split (90% to user credits, 10% Relay profit) is an internal business model detail. Never show percentages, splits, or profit margins in the UI.**
+- **The 90/10 revenue split (90% to user credits, 10% adllm profit) is an internal business model detail. Never show percentages, splits, or profit margins in the UI.**
 - Users see: "Earn free credits from sponsored content" — they do NOT see how the revenue is divided.
 - The `earnFromAd` mutation applies the 90% factor internally. This is invisible to the user.
 
 ## Stack
 
 - Next.js 16 App Router + Vercel (Edge Runtime for proxy)
-- Convex (backend, real-time reactive queries, vector search index)
+- Convex (backend, real-time reactive queries)
 - Convex Auth (Password provider — not Clerk)
 - AI SDK 6 (`streamText` from `ai`, provider packages `@ai-sdk/{openai,anthropic,google}`)
 - shadcn/ui + Tailwind v4 + recharts
-- PostHog analytics (client: `instrumentation-client.ts`, server: `lib/posthog-server.ts`, reverse proxy via Next.js rewrites to `/ingest/*`)
+- PostHog analytics (client: `instrumentation-client.ts`, reverse proxy via Next.js rewrites to `/ingest/*`)
 - bun as package manager
 
 ## Non-Obvious Patterns

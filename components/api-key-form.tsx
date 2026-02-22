@@ -1,29 +1,31 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
+import { CheckCircle2Icon, KeyIcon, Trash2Icon } from "lucide-react";
+import posthog from "posthog-js";
+import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
 import { encrypt } from "@/lib/encryption";
-import { useMutation, useQuery } from "convex/react";
-import { CheckCircle2Icon, KeyIcon, Trash2Icon } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import posthog from "posthog-js";
 
 const PROVIDERS = [
   {
     id: "anthropic" as const,
     name: "Anthropic",
     placeholder: "sk-ant-...",
-    color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+    color:
+      "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   },
   {
     id: "openai" as const,
     name: "OpenAI",
     placeholder: "sk-...",
-    color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+    color:
+      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
   },
   {
     id: "google" as const,
@@ -72,22 +74,22 @@ export function ApiKeyForm() {
       <CardContent className="space-y-4">
         {PROVIDERS.map((p) => {
           const existing = apiKeys?.find(
-          (k: { provider: string; _id: string; keyPreview: string }) =>
-            k.provider === p.id,
-        );
+            (k: { provider: string; _id: string; keyPreview: string }) =>
+              k.provider === p.id,
+          );
           return (
             <div key={p.id} className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="flex items-center gap-2">
                   <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-medium ${p.color}`}
+                    className={`rounded px-1.5 py-0.5 font-medium text-xs ${p.color}`}
                   >
                     {p.name}
                   </span>
                 </Label>
                 {existing && (
                   <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1 text-xs text-green-600">
+                    <span className="flex items-center gap-1 text-green-600 text-xs">
                       <CheckCircle2Icon className="h-3 w-3" />
                       Saved {existing.keyPreview}
                     </span>
@@ -129,9 +131,9 @@ export function ApiKeyForm() {
             </div>
           );
         })}
-        <p className="text-xs text-muted-foreground">
-          Keys are encrypted with AES-GCM before storage. They never leave your browser
-          unencrypted.
+        <p className="text-muted-foreground text-xs">
+          Keys are encrypted with AES-GCM before storage. They never leave your
+          browser unencrypted.
         </p>
       </CardContent>
     </Card>
