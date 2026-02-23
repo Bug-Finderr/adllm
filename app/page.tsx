@@ -34,7 +34,12 @@ export default async function HomePage() {
 
       {/* Hero */}
       <section className="mx-auto max-w-4xl px-6 pt-20 pb-16 text-center md:pt-32 md:pb-24">
-        <a href="https://github.com/Bug-Finderr/adllm" target="_blank" className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-primary text-xs">
+        <a
+          href="https://github.com/Bug-Finderr/adllm"
+          target="_blank"
+          className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-primary text-xs"
+          rel="noopener"
+        >
           <ZapIcon className="h-3 w-3" />
           Open-source AI proxy for your IDE
         </a>
@@ -44,7 +49,7 @@ export default async function HomePage() {
             subsidized
           </span>
         </h1>
-        <p className="mx-auto mt-6 max-w-xl text-muted-foreground text-lg">
+        <p className="mx-auto mt-6 max-w-xl text-lg text-muted-foreground">
           One endpoint for every model. Smart routing picks the cheapest one.
           Sponsored content earns you free credits. Drop-in OpenAI compatible.
         </p>
@@ -64,14 +69,16 @@ export default async function HomePage() {
           </div>
           <div className="p-4 text-left font-mono text-sm leading-relaxed">
             <p className="text-muted-foreground">
-              <span className="text-emerald-400">// Cursor, VS Code, Continue.dev</span>
+              <span className="text-emerald-400">
+                {"// Cursor, VS Code, Continue.dev"}
+              </span>
             </p>
             <p className="mt-1">
               <span className="text-blue-400">baseUrl</span>
               <span className="text-muted-foreground">: </span>
               <span className="text-amber-300">
                 &quot;https://adllm.vercel.app/api/
-                <span className="text-muted-foreground/70">{'<token>'}</span>
+                <span className="text-muted-foreground/70">{"<token>"}</span>
                 /v1&quot;
               </span>
             </p>
@@ -80,14 +87,15 @@ export default async function HomePage() {
               <span className="text-muted-foreground">: </span>
               <span className="text-amber-300">&quot;anything&quot;</span>
             </p>
-            <div className="mt-3 border-t border-dashed pt-3 text-xs text-muted-foreground">
+            <div className="mt-3 border-t border-dashed pt-3 text-muted-foreground text-xs">
               <p>
-                <span className="text-green-400">&#10003;</span> Routed to gemini-2.0-flash{" "}
+                <span className="text-green-400">&#10003;</span> Routed to
+                gemini-2.0-flash{" "}
                 <span className="text-emerald-400">(saved 80%)</span>
               </p>
               <p>
-                <span className="text-green-400">&#10003;</span> +$0.005 credits from
-                sponsored content
+                <span className="text-green-400">&#10003;</span> +$0.005 credits
+                from sponsored content
               </p>
             </div>
           </div>
@@ -127,7 +135,8 @@ export default async function HomePage() {
             Everything built in
           </h2>
           <p className="mx-auto mt-3 max-w-lg text-center text-muted-foreground">
-            No config files, no CLI tools. Just a URL that makes your AI usage smarter and cheaper.
+            No config files, no CLI tools. Just a URL that makes your AI usage
+            smarter and cheaper.
           </p>
           <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FeatureCard
@@ -165,17 +174,22 @@ export default async function HomePage() {
             Works with any OpenAI-compatible tool
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-            {["Cursor", "VS Code Copilot", "Continue.dev", "JetBrains AI", "Cline", "Aider"].map(
-              (ide) => (
-                <span
-                  key={ide}
-                  className="flex items-center gap-2 font-medium text-lg text-muted-foreground"
-                >
-                  <TerminalIcon className="h-4 w-4" />
-                  {ide}
-                </span>
-              ),
-            )}
+            {[
+              "Cursor",
+              "VS Code Copilot",
+              "Continue.dev",
+              "JetBrains AI",
+              "Cline",
+              "Aider",
+            ].map((ide) => (
+              <span
+                key={ide}
+                className="flex items-center gap-2 font-medium text-lg text-muted-foreground"
+              >
+                <TerminalIcon className="h-4 w-4" />
+                {ide}
+              </span>
+            ))}
           </div>
         </div>
       </section>
@@ -230,15 +244,7 @@ export default async function HomePage() {
   );
 }
 
-function Step({
-  n,
-  title,
-  desc,
-}: {
-  n: number;
-  title: string;
-  desc: string;
-}) {
+function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
   return (
     <div className="text-center">
       <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-primary font-bold text-primary-foreground text-sm">

@@ -63,8 +63,9 @@ export function ProxyUrlCard() {
         </div>
 
         <p className="text-muted-foreground text-xs">
-          Paste as <span className="font-medium text-foreground">OpenAI base URL</span> in
-          your IDE. API key can be any value.
+          Paste as{" "}
+          <span className="font-medium text-foreground">OpenAI base URL</span>{" "}
+          in your IDE. API key can be any value.
         </p>
 
         <details className="group">
@@ -77,8 +78,8 @@ export function ProxyUrlCard() {
               Settings → Models → OpenAI → Override Base URL
             </p>
             <p className="text-muted-foreground">
-              <span className="font-mono text-foreground">VS Code</span> →
-              Chat: Manage Language Models → OpenAI Compatible
+              <span className="font-mono text-foreground">VS Code</span> → Chat:
+              Manage Language Models → OpenAI Compatible
             </p>
             <p className="text-muted-foreground">
               <span className="font-mono text-foreground">Continue.dev</span> →

@@ -38,13 +38,11 @@ export function CreditBalanceCard() {
           )}
           {saved > 0 && (
             <span className="flex items-center gap-1">
-              <SparklesIcon className="h-3 w-3 text-emerald-500" />
-              ${saved.toFixed(4)} saved
+              <SparklesIcon className="h-3 w-3 text-emerald-500" />$
+              {saved.toFixed(4)} saved
             </span>
           )}
-          {impressions > 0 && (
-            <span>{impressions} ad impressions</span>
-          )}
+          {impressions > 0 && <span>{impressions} ad impressions</span>}
         </div>
       </CardContent>
     </Card>
