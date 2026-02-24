@@ -6,35 +6,33 @@ import posthog from "posthog-js";
 import { useState } from "react";
 import { toast } from "sonner";
 import { encryptApiKey } from "@/app/actions/encrypt-key";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
+import { PROVIDER_COLOR, PROVIDER_DISPLAY, type Provider } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
-const PROVIDERS = [
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    placeholder: "sk-ant-...",
-    color:
-      "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    placeholder: "sk-...",
-    color:
-      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  },
-  {
-    id: "google",
-    name: "Google (Gemini)",
-    placeholder: "AIzaSy...",
-    color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  },
-] as const;
+const PROVIDERS: Array<{
+  id: Provider;
+  placeholder: string;
+}> = [
+  { id: "anthropic", placeholder: "sk-ant-..." },
+  { id: "openai", placeholder: "sk-..." },
+  { id: "google", placeholder: "AIzaSy..." },
+];
 
 export function ApiKeyForm() {
   const apiKeys = useQuery(api.apiKeys.list);
@@ -59,9 +57,8 @@ export function ApiKeyForm() {
     } catch {
       toast.error("Failed to save API key");
       posthog.capture("api_key_save_failed", { provider });
-    } finally {
-      setSaving(null);
     }
+    setSaving(null);
   }
 
   return (
@@ -85,10 +82,10 @@ export function ApiKeyForm() {
                   <span
                     className={cn(
                       "rounded px-1.5 py-0.5 font-medium text-xs",
-                      p.color,
+                      PROVIDER_COLOR[p.id],
                     )}
                   >
-                    {p.name}
+                    {PROVIDER_DISPLAY[p.id]}
                   </span>
                 </Label>
                 {existing && (
@@ -97,17 +94,44 @@ export function ApiKeyForm() {
                       <CheckCircle2Icon className="h-3 w-3" />
                       Saved {existing.keyPreview}
                     </span>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                      onClick={() => {
-                        remove({ id: existing._id });
-                        posthog.capture("api_key_removed", { provider: p.id });
-                      }}
-                    >
-                      <Trash2Icon className="h-3 w-3" />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2Icon className="h-3 w-3" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Delete {PROVIDER_DISPLAY[p.id]} key?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will permanently remove your{" "}
+                            {PROVIDER_DISPLAY[p.id]} API key. Any routing or
+                            default model settings using this provider will stop
+                            working.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                              remove({ id: existing._id });
+                              posthog.capture("api_key_removed", {
+                                provider: p.id,
+                              });
+                            }}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 )}
               </div>
@@ -120,17 +144,52 @@ export function ApiKeyForm() {
                     setValues((v) => ({ ...v, [p.id]: e.target.value }))
                   }
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSave(p.id, values[p.id] ?? "");
+                    if (e.key === "Enter" && !existing)
+                      handleSave(p.id, values[p.id] ?? "");
                   }}
                 />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={saving === p.id || !values[p.id]?.trim()}
-                  onClick={() => handleSave(p.id, values[p.id] ?? "")}
-                >
-                  {saving === p.id ? "..." : existing ? "Update" : "Save"}
-                </Button>
+                {existing ? (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={saving === p.id || !values[p.id]?.trim()}
+                      >
+                        {saving === p.id ? "..." : "Update"}
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          Update {PROVIDER_DISPLAY[p.id]} key?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will replace your existing{" "}
+                          {PROVIDER_DISPLAY[p.id]} API key. The old key cannot
+                          be recovered.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleSave(p.id, values[p.id] ?? "")}
+                        >
+                          Update
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={saving === p.id || !values[p.id]?.trim()}
+                    onClick={() => handleSave(p.id, values[p.id] ?? "")}
+                  >
+                    {saving === p.id ? "..." : "Save"}
+                  </Button>
+                )}
               </div>
             </div>
           );

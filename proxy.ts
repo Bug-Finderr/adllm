@@ -4,8 +4,12 @@ import {
   nextjsMiddlewareRedirect,
 } from "@convex-dev/auth/nextjs/server";
 
+const isPublicLanding = createRouteMatcher(["/"]);
 const isSignInPage = createRouteMatcher(["/signin"]);
-const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard(.*)",
+  "/settings(.*)",
+]);
 
 export default convexAuthNextjsMiddleware(async (request) => {
   // Read the auth cookie directly — avoids a Convex network call on every request
@@ -14,9 +18,11 @@ export default convexAuthNextjsMiddleware(async (request) => {
     request.cookies.get("__Host-__convexAuthJWT")?.value;
   const isAuthenticated = !!token;
 
-  if (isSignInPage(request) && isAuthenticated) {
+  // Authenticated users on landing/signin → redirect to dashboard
+  if ((isPublicLanding(request) || isSignInPage(request)) && isAuthenticated) {
     return nextjsMiddlewareRedirect(request, "/dashboard");
   }
+  // Unauthenticated users on protected routes → redirect to signin
   if (isProtectedRoute(request) && !isAuthenticated) {
     return nextjsMiddlewareRedirect(request, "/signin");
   }

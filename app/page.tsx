@@ -1,4 +1,3 @@
-import { isAuthenticatedNextjs } from "@convex-dev/auth/nextjs/server";
 import {
   ActivityIcon,
   ArrowRightIcon,
@@ -8,14 +7,9 @@ import {
   ZapIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { SplashCta } from "@/components/splash-cta";
 
-export default async function HomePage() {
-  if (await isAuthenticatedNextjs()) {
-    redirect("/dashboard");
-  }
-
+export default function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Navbar */}
@@ -90,7 +84,7 @@ export default async function HomePage() {
             <div className="mt-3 border-t border-dashed pt-3 text-muted-foreground text-xs">
               <p>
                 <span className="text-green-400">&#10003;</span> Routed to
-                gemini-2.0-flash{" "}
+                gemini-3-flash{" "}
                 <span className="text-emerald-400">(saved 80%)</span>
               </p>
               <p>

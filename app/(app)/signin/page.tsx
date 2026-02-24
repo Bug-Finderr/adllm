@@ -24,11 +24,12 @@ export default function SignInPage() {
     const formData = new FormData(e.currentTarget);
     formData.set("flow", flow);
     const email = formData.get("email") as string;
+    const eventName = flow === "signIn" ? "user_signed_in" : "user_signed_up";
     try {
       await signIn("password", formData);
       // Identify the user and capture login/signup event
       posthog.identify(email, { email });
-      posthog.capture(flow === "signIn" ? "user_signed_in" : "user_signed_up", {
+      posthog.capture(eventName, {
         email,
       });
       window.location.href = "/dashboard";
@@ -39,9 +40,8 @@ export default function SignInPage() {
           : "Could not create account. Try a different email.";
       toast.error(errorMsg);
       posthog.capture("sign_in_failed", { flow, email });
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }
 
   return (

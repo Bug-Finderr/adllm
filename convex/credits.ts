@@ -58,6 +58,27 @@ export const earnFromAd = mutation({
   },
 });
 
+// Refund over-deducted credits after reconciliation (proxy-only, requires secret)
+export const refund = mutation({
+  args: {
+    userId: v.id("users"),
+    amount: v.number(),
+    proxySecret: v.string(),
+  },
+  handler: async (ctx, { userId, amount, proxySecret }) => {
+    requireProxySecret(proxySecret);
+    if (amount <= 0) return;
+    const settings = await ctx.db
+      .query("settings")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .first();
+    if (!settings) return;
+    await ctx.db.patch(settings._id, {
+      credits: (settings.credits ?? 0) + amount,
+    });
+  },
+});
+
 // Spend credits when using adllm pool key (proxy-only, requires secret)
 export const spend = mutation({
   args: {

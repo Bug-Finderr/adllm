@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as cacheStore from "../cacheStore.js";
 import type * as credits from "../credits.js";
 import type * as http from "../http.js";
+import type * as models from "../models.js";
 import type * as requests from "../requests.js";
 import type * as settings from "../settings.js";
 import type * as users from "../users.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   cacheStore: typeof cacheStore;
   credits: typeof credits;
   http: typeof http;
+  models: typeof models;
   requests: typeof requests;
   settings: typeof settings;
   users: typeof users;

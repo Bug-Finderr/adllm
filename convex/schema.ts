@@ -49,6 +49,19 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_user_hash", ["userId", "promptHash"]),
 
+  // AI model catalog (seeded, admin-managed)
+  models: defineTable({
+    modelId: v.string(), // e.g. "openai:gpt-5-mini"
+    name: v.string(), // display name
+    provider: v.string(), // "openai" | "anthropic" | "google"
+    inputCostPer1MTokens: v.number(), // exact $/1M input tokens
+    outputCostPer1MTokens: v.number(), // exact $/1M output tokens
+    tier: v.string(), // "fast" | "balanced" | "powerful"
+    enabled: v.boolean(),
+  })
+    .index("by_modelId", ["modelId"])
+    .index("by_enabled", ["enabled"]),
+
   // Sponsored ads
   ads: defineTable({
     sponsor: v.string(),
@@ -72,6 +85,15 @@ export default defineSchema({
       v.literal("openai"),
       v.literal("google"),
     ),
+    preferredModel: v.optional(v.string()), // e.g. "gpt-5-mini"
+    routingSimpleModel: v.optional(v.string()), // e.g. "google:gemini-2.0-flash"
+    routingMediumModel: v.optional(v.string()), // e.g. "openai:gpt-5-mini"
+    routingComplexModel: v.optional(v.string()), // e.g. "anthropic:claude-sonnet-4-6"
+    // Credit-funded model preferences (pool keys)
+    creditSimpleModel: v.optional(v.string()),
+    creditMediumModel: v.optional(v.string()),
+    creditComplexModel: v.optional(v.string()),
+    creditDefaultModel: v.optional(v.string()),
   })
     .index("by_userId", ["userId"])
     .index("by_relayToken", ["relayToken"]),

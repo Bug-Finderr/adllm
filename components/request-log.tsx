@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
+import { PROVIDER_COLOR, type Provider } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 function formatCost(usd: number): string {
@@ -21,14 +22,18 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(4)}`;
 }
 
+const MODEL_PROVIDER_HINT: Array<[string, Provider]> = [
+  ["claude", "anthropic"],
+  ["gpt", "openai"],
+  ["o1", "openai"],
+  ["o3", "openai"],
+  ["o4", "openai"],
+  ["gemini", "google"],
+];
+
 function modelColor(model: string): string {
-  if (model.includes("claude"))
-    return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400";
-  if (model.includes("gpt"))
-    return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400";
-  if (model.includes("gemini"))
-    return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400";
-  return "";
+  const match = MODEL_PROVIDER_HINT.find(([hint]) => model.includes(hint));
+  return match ? PROVIDER_COLOR[match[1]] : "";
 }
 
 export function RequestLog() {

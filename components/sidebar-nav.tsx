@@ -23,7 +23,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           Dashboard
         </NavLink>
         <NavLink
-          href="/dashboard/settings"
+          href="/settings"
           icon={<SettingsIcon className="h-4 w-4" />}
           onNavigate={onNavigate}
         >

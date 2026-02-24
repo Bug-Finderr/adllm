@@ -9,7 +9,8 @@ import { PostHog } from "posthog-node";
 import { api } from "@/convex/_generated/api";
 import { type Ad, formatAdMarkdown, pickAd } from "@/lib/ads";
 import { decrypt } from "@/lib/encryption";
-import { classifyAndRoute, MODEL_PROVIDER_MAP } from "@/lib/routing";
+import { bareModelId, modelProvider, type Provider } from "@/lib/models";
+import { classifyAndRoute, ROUTING_PREFERENCES } from "@/lib/routing";
 
 const CREDIT_SPLIT = 0.9;
 const PROXY_SECRET = process.env.PROXY_SECRET ?? "";
@@ -69,19 +70,23 @@ const POOL_KEY_MAP: Record<string, string> = {
   google: "GEMINI_API_KEY",
 };
 
-// Cost per 1M tokens (input + output average)
-const MODEL_COSTS: Record<string, number> = {
-  "gemini-2.0-flash": 0.075,
-  "gpt-4o-mini": 0.15,
-  "gpt-4o": 2.5,
-  "claude-sonnet-4-5": 3.0,
-  "claude-3-5-sonnet-20241022": 3.0,
-  "claude-haiku-4-5": 0.8,
-};
+// Derive default model per provider from medium-tier routing preferences
+const DEFAULT_MODEL_FOR_PROVIDER: Record<string, string> = Object.fromEntries(
+  ROUTING_PREFERENCES.medium.map((p) => [p.provider, p.model]),
+);
 
-function estimateCost(model: string, tokens: number): number {
-  const rate = MODEL_COSTS[model] ?? 1.0;
-  return (tokens / 1_000_000) * rate;
+// Model cost maps — populated from DB at request time
+let modelInputCost: Record<string, number> = {};
+let modelOutputCost: Record<string, number> = {};
+
+function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const inRate = modelInputCost[model] ?? 1.0;
+  const outRate = modelOutputCost[model] ?? 1.0;
+  return (inputTokens * inRate + outputTokens * outRate) / 1_000_000;
 }
 
 function safeErrorMessage(err: unknown): string {
@@ -93,13 +98,23 @@ function safeErrorMessage(err: unknown): string {
   );
 }
 
-function makeOpenAIChunk(content: string, model: string): string {
+function makeOpenAIChunk(
+  content: string,
+  model: string,
+  finishReason: string | null = null,
+): string {
   return JSON.stringify({
     id: `chatcmpl-relay-${Date.now()}`,
     object: "chat.completion.chunk",
     created: Math.floor(Date.now() / 1000),
     model,
-    choices: [{ index: 0, delta: { content }, finish_reason: null }],
+    choices: [
+      {
+        index: 0,
+        delta: content ? { content } : {},
+        finish_reason: finishReason,
+      },
+    ],
   });
 }
 
@@ -141,6 +156,20 @@ export async function POST(
 
   const userId = settings.userId;
   const ph = getPostHog();
+
+  // 0b. Load model catalog from DB (Convex caches this query)
+  const allModels = await fetchQuery(api.models.list, {});
+  // Build lookup maps: bare model name → { provider, bareId }
+  const modelByBareId: Record<string, { provider: string; bareId: string }> =
+    {};
+  modelInputCost = {};
+  modelOutputCost = {};
+  for (const m of allModels) {
+    const bare = bareModelId(m.modelId);
+    modelByBareId[bare] = { provider: m.provider, bareId: bare };
+    modelInputCost[bare] = m.inputCostPer1MTokens;
+    modelOutputCost[bare] = m.outputCostPer1MTokens;
+  }
 
   // Track the incoming request server-side
   ph.capture({
@@ -237,34 +266,112 @@ export async function POST(
   let complexity: "simple" | "medium" | "complex" | undefined;
   const userText = extractUserText(messages);
 
-  const knownModel = MODEL_PROVIDER_MAP[requestedModel];
+  const knownModel = modelByBareId[requestedModel];
   const geminiKey = process.env.GEMINI_API_KEY ?? "";
 
-  if (knownModel) {
-    // Direct model passthrough — use whatever provider the model belongs to
-    provider = knownModel.provider;
-    actualModel = knownModel.model;
+  // Pool providers available on the server (for credit-funded requests)
+  const poolProviders: Provider[] = [];
+  for (const [prov, envKey] of Object.entries(POOL_KEY_MAP)) {
+    if (process.env[envKey]) poolProviders.push(prov as Provider);
+  }
+  const canUseCredits = creditBalance > 0 && poolProviders.length > 0;
+
+  // Helper to parse a full modelId into { provider, model }
+  const parseOverride = (id?: string) =>
+    id ? { provider: modelProvider(id), model: bareModelId(id) } : undefined;
+
+  if (
+    knownModel &&
+    routingProviders.includes(knownModel.provider as typeof provider)
+  ) {
+    // Direct model passthrough — matched a model AND provider is available
+    provider = knownModel.provider as typeof provider;
+    actualModel = knownModel.bareId;
   } else if (settings.routingEnabled && geminiKey) {
+    // Smart routing — classify complexity, then pick model based on funding source
+    let activeRouting: any;
+
+    if (canUseCredits) {
+      // CREDIT PATH: use credit model settings → fall back to ROUTING_PREFERENCES with pool providers
+      const creditFallback = (tier: "simple" | "medium" | "complex") => {
+        const match = ROUTING_PREFERENCES[tier].find((p) =>
+          poolProviders.includes(p.provider as Provider),
+        );
+        return match
+          ? { provider: match.provider as Provider, model: match.model }
+          : undefined;
+      };
+      activeRouting = {
+        simple:
+          parseOverride(settings.creditSimpleModel) ?? creditFallback("simple"),
+        medium:
+          parseOverride(settings.creditMediumModel) ?? creditFallback("medium"),
+        complex:
+          parseOverride(settings.creditComplexModel) ??
+          creditFallback("complex"),
+      };
+    } else {
+      // USER KEY PATH: use routing model settings → fall back to ROUTING_PREFERENCES with user providers
+      const userFallback = (tier: "simple" | "medium" | "complex") => {
+        const match = ROUTING_PREFERENCES[tier].find((p) =>
+          availableProviders.includes(p.provider as any),
+        );
+        return match
+          ? { provider: match.provider as Provider, model: match.model }
+          : undefined;
+      };
+      activeRouting = {
+        simple:
+          parseOverride(settings.routingSimpleModel) ?? userFallback("simple"),
+        medium:
+          parseOverride(settings.routingMediumModel) ?? userFallback("medium"),
+        complex:
+          parseOverride(settings.routingComplexModel) ??
+          userFallback("complex"),
+      };
+    }
+
     const decision = await classifyAndRoute(
       userText,
       geminiKey,
       routingProviders,
+      activeRouting,
     );
     provider = decision.provider;
     actualModel = decision.model;
     complexity = decision.complexity;
   } else {
-    // Routing off — use preferred provider if available, else first available
-    const preferred = settings.preferredProvider;
-    provider = routingProviders.includes(preferred)
-      ? preferred
-      : routingProviders[0];
-    actualModel =
-      provider === "anthropic"
-        ? "claude-sonnet-4-5"
-        : provider === "openai"
-          ? "gpt-4o-mini"
-          : "gemini-2.0-flash";
+    // Routing OFF — pick a single model based on funding source
+    if (canUseCredits) {
+      // Credit default model
+      const creditDefault = parseOverride(settings.creditDefaultModel);
+      if (creditDefault && poolProviders.includes(creditDefault.provider)) {
+        provider = creditDefault.provider;
+        actualModel = creditDefault.model;
+      } else {
+        // Fall back to first pool provider's default
+        provider = poolProviders[0];
+        actualModel = DEFAULT_MODEL_FOR_PROVIDER[provider] ?? "gpt-5-mini";
+      }
+    } else if (settings.preferredModel) {
+      // User's chosen model
+      const chosenBare = bareModelId(settings.preferredModel);
+      const chosenProvider = modelProvider(settings.preferredModel);
+      if (routingProviders.includes(chosenProvider)) {
+        provider = chosenProvider;
+        actualModel = chosenBare;
+      } else {
+        provider = routingProviders[0];
+        actualModel = DEFAULT_MODEL_FOR_PROVIDER[provider] ?? "gpt-5-mini";
+      }
+    } else {
+      // No preferred model — use preferred provider's default
+      const preferred = settings.preferredProvider;
+      provider = routingProviders.includes(preferred)
+        ? preferred
+        : routingProviders[0];
+      actualModel = DEFAULT_MODEL_FOR_PROVIDER[provider] ?? "gpt-5-mini";
+    }
   }
 
   // 5. Check prompt cache
@@ -332,6 +439,11 @@ export async function POST(
               ),
             );
           }
+          controller.enqueue(
+            encoder.encode(
+              `data: ${makeOpenAIChunk("", cached.model, "stop")}\n\n`,
+            ),
+          );
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         },
@@ -396,7 +508,12 @@ export async function POST(
   // 6a. Cost pre-check: ensure credits cover estimated cost when using pool key
   if (usedPoolKey) {
     const inputTokenEstimate = JSON.stringify(processedMessages).length / 4;
-    const estimatedCost = estimateCost(actualModel, inputTokenEstimate * 2);
+    const outputTokenEstimate = inputTokenEstimate; // rough 1:1 estimate
+    const estimatedCost = estimateCost(
+      actualModel,
+      inputTokenEstimate,
+      outputTokenEstimate,
+    );
     if (estimatedCost > creditBalance) {
       // Credits probably won't cover this — try falling back to user's own key
       const encryptedKeyData = await fetchQuery(
@@ -409,10 +526,62 @@ export async function POST(
           encryptedKeyData.iv,
         );
         usedPoolKey = false;
+      } else {
+        // No user key and insufficient credits — block the request
+        ph.shutdown().catch(() => {});
+        return new Response(
+          JSON.stringify({
+            error:
+              "Insufficient credits for this request. Add your own API key or earn more credits.",
+          }),
+          { status: 402, headers: { "Content-Type": "application/json" } },
+        );
       }
-      // If no user key, proceed with pool key anyway (best-effort)
+    }
+
+    // Pre-deduct credits BEFORE streaming to prevent race conditions.
+    // Actual cost is reconciled after streaming completes.
+    if (usedPoolKey) {
+      try {
+        await fetchMutation(api.credits.spend, {
+          userId,
+          amount: estimatedCost,
+          proxySecret: PROXY_SECRET,
+        });
+      } catch {
+        // Spend failed (e.g. concurrent request drained credits) — try user's own key
+        const encryptedKeyData = await fetchQuery(
+          api.apiKeys.getEncryptedForProvider,
+          { userId, provider },
+        );
+        if (encryptedKeyData) {
+          apiKey = await decrypt(
+            encryptedKeyData.encryptedKey,
+            encryptedKeyData.iv,
+          );
+          usedPoolKey = false;
+        } else {
+          ph.shutdown().catch(() => {});
+          return new Response(
+            JSON.stringify({
+              error:
+                "Insufficient credits. Add your own API key or earn more credits.",
+            }),
+            { status: 402, headers: { "Content-Type": "application/json" } },
+          );
+        }
+      }
     }
   }
+
+  // Track how much was pre-deducted so we can reconcile after streaming
+  const preDeductedAmount = usedPoolKey
+    ? estimateCost(
+        actualModel,
+        JSON.stringify(processedMessages).length / 4,
+        JSON.stringify(processedMessages).length / 4,
+      )
+    : 0;
 
   // 7. Stream response from provider
   let llmModel: LanguageModel;
@@ -456,6 +625,11 @@ export async function POST(
               ),
             );
           }
+          controller.enqueue(
+            encoder.encode(
+              `data: ${makeOpenAIChunk("", actualModel, "stop")}\n\n`,
+            ),
+          );
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 
           // Get token usage (AI SDK v6: inputTokens/outputTokens)
@@ -469,7 +643,8 @@ export async function POST(
           const latencyMs = Date.now() - start;
           const costUsd = estimateCost(
             actualModel,
-            promptTokens + completionTokens,
+            promptTokens,
+            completionTokens,
           );
 
           // Log to Convex (fire and forget)
@@ -496,12 +671,25 @@ export async function POST(
               proxySecret: PROXY_SECRET,
             }).catch(console.error);
           }
-          if (usedPoolKey && costUsd > 0) {
-            fetchMutation(api.credits.spend, {
-              userId,
-              amount: costUsd,
-              proxySecret: PROXY_SECRET,
-            }).catch(console.error);
+          // Reconcile pre-deducted credits with actual cost
+          if (usedPoolKey && preDeductedAmount > 0) {
+            const diff = preDeductedAmount - costUsd;
+            if (diff > 0.000001) {
+              // Over-charged: refund the difference
+              fetchMutation(api.credits.refund, {
+                userId,
+                amount: diff,
+                proxySecret: PROXY_SECRET,
+              }).catch(console.error);
+            } else if (diff < -0.000001) {
+              // Under-charged: deduct the extra
+              fetchMutation(api.credits.spend, {
+                userId,
+                amount: -diff,
+                proxySecret: PROXY_SECRET,
+              }).catch(console.error);
+            }
+            // If diff ≈ 0, no reconciliation needed
           }
 
           // Track successful completion

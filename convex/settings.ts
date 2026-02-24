@@ -56,6 +56,14 @@ export const update = mutation({
     preferredProvider: v.optional(
       v.union(v.literal("anthropic"), v.literal("openai"), v.literal("google")),
     ),
+    preferredModel: v.optional(v.string()),
+    routingSimpleModel: v.optional(v.string()),
+    routingMediumModel: v.optional(v.string()),
+    routingComplexModel: v.optional(v.string()),
+    creditSimpleModel: v.optional(v.string()),
+    creditMediumModel: v.optional(v.string()),
+    creditComplexModel: v.optional(v.string()),
+    creditDefaultModel: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
