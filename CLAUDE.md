@@ -19,8 +19,9 @@ Always use `bun` / `bunx` — never npm, npx, pnpm, or yarn.
 ## Critical Guidelines
 
 - **Never run**: tests, build, lint, or compile/transpile commands
-- **Rely on IDE**: Use IDE integrations (diagnostics, type checking) to detect code issues
-- **Web search first**: Always search for latest documentation and reliable context before implementing
+- **Rely on IDE and tools**: Use IDE integrations (diagnostics, type checking) and MCP tools and plugins to detect code issues
+- **Use context7 MCP and web search first** for AI SDK 6, Convex, Next.js 16 docs, etc. — don't rely on training data, always search for latest documentation and reliable context before implementing
+- **Use serena** for semantic code navigation (find callers, trace types) before large changes
 - **Stay focused**: Ignore issues not related to the current task
 - **Minimal code**: Prioritize best practices with minimal, clean code
 
@@ -30,7 +31,7 @@ Always use `bun` / `bunx` — never npm, npx, pnpm, or yarn.
 
 `app/api/[relayToken]/v1/chat/completions/route.ts` — Edge Runtime, OpenAI-compatible endpoint.
 
-**Pipeline**: Rate limit (Upstash Redis) → auth by relay token → ad selection → context injection → cache check (SHA-256) → smart routing (Gemini Flash classifies complexity) → resolve API key (pool key w/ credits → user's own as fallback) → stream via AI SDK 6 → log request + earn/spend credits → return SSE stream with ad appended.
+**Pipeline**: Rate limit (Upstash Redis) → auth by relay token → ad selection → context injection → cache check (SHA-256) → smart routing (Gemini Flash classifies complexity) → resolve API key (pool key w/ credits → user's own as fallback) → pre-deduct credits → stream via AI SDK 6 → reconcile credits → log request + earn/spend credits → return SSE stream with ad appended + `finish_reason: "stop"` + `[DONE]`.
 
 ### Dual Auth Model
 
@@ -42,12 +43,13 @@ Always use `bun` / `bunx` — never npm, npx, pnpm, or yarn.
 
 All backend logic lives in `convex/`. Key modules:
 
-- `schema.ts` — 6 tables: apiKeys, requests, cache, ads, settings, + authTables
-- `settings.ts` — Per-user config (relay token, routing/cache/ads toggles, system prompt, credit balance)
+- `schema.ts` — 7 tables: apiKeys, requests, cache, models, ads, settings, + authTables
+- `settings.ts` — Per-user config (relay token, routing/cache/ads toggles, system prompt, credit balance, routing model prefs, credit model prefs)
 - `apiKeys.ts` — Encrypted API key CRUD (AES-GCM, encrypted server-side via server action)
 - `requests.ts` — Request logging + `getStats` / `getHistoricalStats` (time-bucketed analytics)
-- `credits.ts` — Credit balance queries, `earnFromAd` (looks up ad CPM from DB, applies 90% split), `spend`
+- `credits.ts` — `checkBalance`, `earnFromAd` (90% split), `spend`, `refund` (post-stream reconciliation)
 - `cacheStore.ts` — SHA-256 hash-based exact cache lookup
+- `models.ts` — Model catalog (provider, name, tier, cost per 1M tokens) — loaded at request time for cost estimation
 - `ads.ts` — Sponsored ad CRUD + seed
 - `auth.helpers.ts` — `requireProxySecret()` shared validation helper
 
@@ -55,7 +57,15 @@ All backend logic lives in `convex/`. Key modules:
 
 ### Smart Routing (`lib/routing.ts`)
 
-Gemini Flash classifies the prompt's first 300 chars as simple/medium/complex. Each tier has a preference order of providers — picks the first one the user has a key for. Known model names (gpt-4o, claude-sonnet-4-5, etc.) bypass classification and route directly via `MODEL_PROVIDER_MAP`.
+Gemini 3 Flash classifies the prompt's first 300 chars as simple/medium/complex. Each tier has a preference order in `ROUTING_PREFERENCES`. Known model names (from the `models` DB table) bypass classification via `modelByBareId` lookup.
+
+### Dual-Track Model Selection (route.ts)
+
+The route branches on `canUseCredits` (creditBalance > 0 && pool env vars exist):
+- **Credit path**: reads `creditSimpleModel` / `creditMediumModel` / `creditComplexModel` from settings, falls back to `ROUTING_PREFERENCES` filtered by pool providers. When routing is off, uses `creditDefaultModel`.
+- **User key path**: reads `routingSimpleModel` / `routingMediumModel` / `routingComplexModel` from settings, falls back to `ROUTING_PREFERENCES` filtered by user's own providers. When routing is off, uses `preferredModel`.
+
+These tracks NEVER mix — pool providers don't influence user-key routing and vice versa. `app/actions/pool-providers.ts` exposes pool provider availability to the settings UI via a server action.
 
 ### API Key Encryption (`lib/encryption.ts`)
 
@@ -72,7 +82,11 @@ AES-GCM 256-bit. Key from `ENCRYPTION_KEY` env var (64-char hex, server-side onl
 
 ### Pool Key Priority (Credit System)
 
-When a user has credits > 0, the proxy **prefers adllm's pool keys** (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) over the user's own keys. A cost pre-check estimates whether credits cover the request; if not, it falls back to the user's own key. Cost is deducted after streaming. No pool key + no user key + no credits → 402.
+When a user has credits > 0, the proxy **prefers adllm's pool keys** (env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) over the user's own keys. Flow:
+1. Cost pre-check estimates whether credits cover the request
+2. Credits are **pre-deducted** before streaming (prevents race conditions with concurrent requests)
+3. After streaming, actual cost is reconciled: over-charged → `credits.refund`, under-charged → `credits.spend` extra
+4. If pre-deduction fails or credits insufficient → falls back to user's own key → if none → 402
 
 ## Ad-Funded Credits (INTERNAL — never expose to users)
 
@@ -95,9 +109,9 @@ When a user has credits > 0, the proxy **prefers adllm's pool keys** (env vars: 
 
 - **Tailwind v4**: Uses `@tailwindcss/postcss` plugin. `darkMode: ["selector", ".dark"]` in config.
 - **PostHog on Edge**: Instantiated per-request with `flushAt: 1, flushInterval: 0` for serverless.
-- **SSE ad injection**: Ads sent as additional OpenAI-compatible delta chunks before `data: [DONE]`.
+- **SSE format**: OpenAI-compatible chunks with `finish_reason: "stop"` before `data: [DONE]`. Ads injected as additional delta chunks before the stop chunk.
 - **Convex `v.optional()` for migrations**: New schema fields use `v.optional()` so existing documents aren't broken.
-- **Cost table in proxy route**: Token costs estimated with a hardcoded `MODEL_COSTS` map (per-million-token rates).
+- **Model costs from DB**: Token costs loaded from `models` table via `api.models.list` at request time (not hardcoded).
 - **`convex/env.d.ts`**: Ambient type declaration for `process.env` — required because Convex's bundler doesn't include `@types/node`.
 
 ## A Note To The Agent
