@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { type Preloaded, usePreloadedQuery } from "convex/react";
 import {
   ActivityIcon,
   DatabaseIcon,
@@ -9,7 +9,7 @@ import {
   PiggyBankIcon,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/convex/_generated/api";
+import type { api } from "@/convex/_generated/api";
 
 function StatCard({
   label,
@@ -36,8 +36,12 @@ function StatCard({
   );
 }
 
-export function StatsBar() {
-  const stats = useQuery(api.requests.getStats);
+interface StatsBarProps {
+  preloadedStats: Preloaded<typeof api.requests.getStats>;
+}
+
+export function StatsBar({ preloadedStats }: StatsBarProps) {
+  const stats = usePreloadedQuery(preloadedStats);
 
   if (!stats) {
     return (

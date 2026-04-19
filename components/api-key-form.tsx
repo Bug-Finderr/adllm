@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { type Preloaded, useMutation, usePreloadedQuery } from "convex/react";
 import { CheckCircle2Icon, KeyIcon, Trash2Icon } from "lucide-react";
 import posthog from "posthog-js";
 import { useState } from "react";
@@ -34,8 +34,12 @@ const PROVIDERS: Array<{
   { id: "google", placeholder: "AIzaSy..." },
 ];
 
-export function ApiKeyForm() {
-  const apiKeys = useQuery(api.apiKeys.list);
+interface ApiKeyFormProps {
+  preloadedApiKeys: Preloaded<typeof api.apiKeys.list>;
+}
+
+export function ApiKeyForm({ preloadedApiKeys }: ApiKeyFormProps) {
+  const apiKeys = usePreloadedQuery(preloadedApiKeys);
   const upsert = useMutation(api.apiKeys.upsert);
   const remove = useMutation(api.apiKeys.remove);
   const [values, setValues] = useState<Record<string, string>>({});

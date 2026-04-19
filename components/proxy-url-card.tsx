@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { type Preloaded, useMutation, usePreloadedQuery } from "convex/react";
 import { CheckIcon, CopyIcon, RefreshCwIcon, ZapIcon } from "lucide-react";
 import posthog from "posthog-js";
 import { useState } from "react";
@@ -11,14 +11,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
 
-export function ProxyUrlCard() {
-  const settings = useQuery(api.settings.get);
+interface ProxyUrlCardProps {
+  preloadedSettings: Preloaded<typeof api.settings.get>;
+}
+
+export function ProxyUrlCard({ preloadedSettings }: ProxyUrlCardProps) {
+  const settings = usePreloadedQuery(preloadedSettings);
   const regenerate = useMutation(api.settings.regenerateToken);
   const [copied, setCopied] = useState(false);
 
-  const baseUrl = settings
-    ? `${window.location.origin}/api/${settings.relayToken}/v1`
-    : "";
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const baseUrl = settings ? `${origin}/api/${settings.relayToken}/v1` : "";
 
   async function copyUrl() {
     await navigator.clipboard.writeText(baseUrl);

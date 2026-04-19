@@ -1,13 +1,21 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { type Preloaded, usePreloadedQuery } from "convex/react";
 import { SparklesIcon, WalletIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/convex/_generated/api";
+import type { api } from "@/convex/_generated/api";
 
-export function CreditBalanceCard() {
-  const balance = useQuery(api.credits.getBalance);
-  const stats = useQuery(api.requests.getStats);
+interface CreditBalanceCardProps {
+  preloadedBalance: Preloaded<typeof api.credits.getBalance>;
+  preloadedStats: Preloaded<typeof api.requests.getStats>;
+}
+
+export function CreditBalanceCard({
+  preloadedBalance,
+  preloadedStats,
+}: CreditBalanceCardProps) {
+  const balance = usePreloadedQuery(preloadedBalance);
+  const stats = usePreloadedQuery(preloadedStats);
 
   if (balance == null) return null;
 

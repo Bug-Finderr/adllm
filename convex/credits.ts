@@ -44,7 +44,7 @@ export const earnFromAd = mutation({
     const normalizedId = ctx.db.normalizeId("ads", adId);
     if (!normalizedId) return 0;
     const ad = await ctx.db.get(normalizedId);
-    if (!ad || !ad.active) return 0;
+    if (!ad?.active) return 0;
     const settings = await ctx.db
       .query("settings")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

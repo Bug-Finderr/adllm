@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { type Preloaded, usePreloadedQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api } from "@/convex/_generated/api";
+import type { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { PROVIDER_COLOR, type Provider } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -36,8 +36,12 @@ function modelColor(model: string): string {
   return match ? PROVIDER_COLOR[match[1]] : "";
 }
 
-export function RequestLog() {
-  const requests = useQuery(api.requests.getRecent, { limit: 10 });
+interface RequestLogProps {
+  preloadedRequests: Preloaded<typeof api.requests.getRecent>;
+}
+
+export function RequestLog({ preloadedRequests }: RequestLogProps) {
+  const requests = usePreloadedQuery(preloadedRequests);
 
   if (!requests) {
     return (
