@@ -2,6 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireProxySecret } from "./auth.helpers";
+import { CREDIT_SPLIT } from "./constants";
 
 // Dashboard: get current user's credit balance
 export const getBalance = query({
@@ -29,8 +30,6 @@ export const checkBalance = query({
   },
 });
 
-const CREDIT_SPLIT = 0.9;
-
 // Earn credits from an ad impression (proxy-only, requires secret)
 export const earnFromAd = mutation({
   args: {
@@ -44,15 +43,18 @@ export const earnFromAd = mutation({
     const normalizedId = ctx.db.normalizeId("ads", adId);
     if (!normalizedId) return 0;
     const ad = await ctx.db.get(normalizedId);
-    if (!ad?.active) return 0;
+    if (!ad?.active || !(ad.cpm > 0)) return 0;
     const settings = await ctx.db
       .query("settings")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .first();
     if (!settings) return 0;
+    const now = Date.now();
+    if (now - (settings.lastAdEarnedAt ?? 0) < 30_000) return 0;
     const earned = (ad.cpm * CREDIT_SPLIT) / 1000;
     await ctx.db.patch(settings._id, {
       credits: (settings.credits ?? 0) + earned,
+      lastAdEarnedAt: now,
     });
     return earned;
   },
@@ -67,7 +69,7 @@ export const refund = mutation({
   },
   handler: async (ctx, { userId, amount, proxySecret }) => {
     requireProxySecret(proxySecret);
-    if (amount <= 0) return;
+    if (!Number.isFinite(amount) || amount <= 0) return;
     const settings = await ctx.db
       .query("settings")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -88,6 +90,9 @@ export const spend = mutation({
   },
   handler: async (ctx, { userId, amount, proxySecret }) => {
     requireProxySecret(proxySecret);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Invalid credit amount");
+    }
     const settings = await ctx.db
       .query("settings")
       .withIndex("by_userId", (q) => q.eq("userId", userId))

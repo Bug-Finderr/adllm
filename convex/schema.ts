@@ -94,6 +94,7 @@ export default defineSchema({
     creditMediumModel: v.optional(v.string()),
     creditComplexModel: v.optional(v.string()),
     creditDefaultModel: v.optional(v.string()),
+    lastAdEarnedAt: v.optional(v.number()),
   })
     .index("by_userId", ["userId"])
     .index("by_relayToken", ["relayToken"]),

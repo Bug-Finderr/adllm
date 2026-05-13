@@ -7,12 +7,16 @@ import { type LanguageModel, streamText } from "ai";
 import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { PostHog } from "posthog-node";
 import { api } from "@/convex/_generated/api";
+import {
+  CREDIT_SPLIT,
+  DEFAULT_MAX_OUTPUT_TOKENS,
+  MAX_COST_PER_REQUEST,
+} from "@/convex/constants";
 import { type Ad, formatAdMarkdown, pickAd } from "@/lib/ads";
 import { decrypt } from "@/lib/encryption";
 import { bareModelId, modelProvider, type Provider } from "@/lib/models";
 import { classifyAndRoute, ROUTING_PREFERENCES } from "@/lib/routing";
 
-const CREDIT_SPLIT = 0.9;
 const PROXY_SECRET = process.env.PROXY_SECRET ?? "";
 
 export const runtime = "edge";
@@ -78,14 +82,16 @@ const DEFAULT_MODEL_FOR_PROVIDER: Record<string, string> = Object.fromEntries(
 // Model cost maps — populated from DB at request time
 let modelInputCost: Record<string, number> = {};
 let modelOutputCost: Record<string, number> = {};
+let maxInputCost = 10.0;
+let maxOutputCost = 75.0;
 
 function estimateCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
 ): number {
-  const inRate = modelInputCost[model] ?? 1.0;
-  const outRate = modelOutputCost[model] ?? 1.0;
+  const inRate = modelInputCost[model] ?? maxInputCost;
+  const outRate = modelOutputCost[model] ?? maxOutputCost;
   return (inputTokens * inRate + outputTokens * outRate) / 1_000_000;
 }
 
@@ -164,11 +170,17 @@ export async function POST(
     {};
   modelInputCost = {};
   modelOutputCost = {};
+  maxInputCost = 10.0;
+  maxOutputCost = 75.0;
   for (const m of allModels) {
     const bare = bareModelId(m.modelId);
     modelByBareId[bare] = { provider: m.provider, bareId: bare };
     modelInputCost[bare] = m.inputCostPer1MTokens;
     modelOutputCost[bare] = m.outputCostPer1MTokens;
+    if (m.inputCostPer1MTokens > maxInputCost)
+      maxInputCost = m.inputCostPer1MTokens;
+    if (m.outputCostPer1MTokens > maxOutputCost)
+      maxOutputCost = m.outputCostPer1MTokens;
   }
 
   // Track the incoming request server-side
@@ -506,9 +518,10 @@ export async function POST(
   }
 
   // 6a. Cost pre-check: ensure credits cover estimated cost when using pool key
+  let preDeductedAmount = 0;
   if (usedPoolKey) {
     const inputTokenEstimate = JSON.stringify(processedMessages).length / 4;
-    const outputTokenEstimate = inputTokenEstimate; // rough 1:1 estimate
+    const outputTokenEstimate = body.max_tokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
     const estimatedCost = estimateCost(
       actualModel,
       inputTokenEstimate,
@@ -540,14 +553,20 @@ export async function POST(
     }
 
     // Pre-deduct credits BEFORE streaming to prevent race conditions.
-    // Actual cost is reconciled after streaming completes.
+    // Cap at cost cap and balance to limit exposure per request.
     if (usedPoolKey) {
+      const preDeductAmount = Math.min(
+        estimatedCost,
+        MAX_COST_PER_REQUEST,
+        creditBalance,
+      );
       try {
         await fetchMutation(api.credits.spend, {
           userId,
-          amount: estimatedCost,
+          amount: preDeductAmount,
           proxySecret: PROXY_SECRET,
         });
+        preDeductedAmount = preDeductAmount;
       } catch {
         // Spend failed (e.g. concurrent request drained credits) — try user's own key
         const encryptedKeyData = await fetchQuery(
@@ -573,15 +592,6 @@ export async function POST(
       }
     }
   }
-
-  // Track how much was pre-deducted so we can reconcile after streaming
-  const preDeductedAmount = usedPoolKey
-    ? estimateCost(
-        actualModel,
-        JSON.stringify(processedMessages).length / 4,
-        JSON.stringify(processedMessages).length / 4,
-      )
-    : 0;
 
   // 7. Stream response from provider
   let llmModel: LanguageModel;
@@ -663,33 +673,29 @@ export async function POST(
             proxySecret: PROXY_SECRET,
           }).catch(console.error);
 
-          // Credit operations (fire and forget)
+          // Await financial mutations to guarantee accounting
           if (ad) {
-            fetchMutation(api.credits.earnFromAd, {
+            await fetchMutation(api.credits.earnFromAd, {
               userId,
               adId: ad._id,
               proxySecret: PROXY_SECRET,
             }).catch(console.error);
           }
-          // Reconcile pre-deducted credits with actual cost
           if (usedPoolKey && preDeductedAmount > 0) {
             const diff = preDeductedAmount - costUsd;
             if (diff > 0.000001) {
-              // Over-charged: refund the difference
-              fetchMutation(api.credits.refund, {
+              await fetchMutation(api.credits.refund, {
                 userId,
                 amount: diff,
                 proxySecret: PROXY_SECRET,
               }).catch(console.error);
             } else if (diff < -0.000001) {
-              // Under-charged: deduct the extra
-              fetchMutation(api.credits.spend, {
+              await fetchMutation(api.credits.spend, {
                 userId,
                 amount: -diff,
                 proxySecret: PROXY_SECRET,
               }).catch(console.error);
             }
-            // If diff ≈ 0, no reconciliation needed
           }
 
           // Track successful completion
@@ -748,6 +754,15 @@ export async function POST(
 
           controller.close();
         } catch (err) {
+          // Refund pre-deducted credits on streaming failure
+          if (usedPoolKey && preDeductedAmount > 0) {
+            await fetchMutation(api.credits.refund, {
+              userId,
+              amount: preDeductedAmount,
+              proxySecret: PROXY_SECRET,
+            }).catch(console.error);
+          }
+
           const latencyMs = Date.now() - start;
           fetchMutation(api.requests.log, {
             userId,
